@@ -81,3 +81,24 @@ func GenerateReqSeed() int {
 	result := int(100 * rand.Float64())
 	return result
 }
+
+// CalculateMaxPage
+//
+//	@Description: 计算最大页数
+//	@param totalCount 总数据
+//	@param pageSize 每页数据
+//	@return int 最大页数
+func CalculateMaxPage(totalCount int, pageSize int) int {
+	if totalCount < 0 || pageSize <= 0 {
+		panic("totalCount必须大于等于0, pageSize必须大于0")
+	}
+	if totalCount == 0 {
+		return 1
+	}
+	i := totalCount / pageSize
+	padding := totalCount % pageSize
+	if padding != 0 {
+		i += 1
+	}
+	return i
+}
