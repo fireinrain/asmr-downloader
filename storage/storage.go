@@ -18,7 +18,7 @@ func GetDbInstance() *SqliteStoreEngine {
 		fmt.Println(err)
 		return nil
 	}
-	defer db.Close()
+	//defer db.Close()
 	once.Do(func() {
 		StoreDb = &SqliteStoreEngine{
 			DbFilePath: config.MetaDataDb,
@@ -51,7 +51,7 @@ type SqliteStoreEngine struct {
 func (receiver *SqliteStoreEngine) initDbTables() error {
 	_, err := receiver.Db.Exec(`
 		CREATE TABLE IF NOT EXISTS [item_product] (
-		  [id] INT PRIMARY KEY,
+		  [id] TEXT PRIMARY KEY,
 		  [title] TEXT,
 		  [circle_id] INT,
 		  [name] TEXT,
@@ -80,8 +80,8 @@ func (receiver *SqliteStoreEngine) initDbTables() error {
 		
 	CREATE TABLE if not exists asmr_download (id integer PRIMARY KEY autoincrement,
                                                    rjid text UNIQUE,
-                                                             item_prod_id integer UNIQUE,
-                                                                                  download_flag integer, dir_name text);
+                                                             item_prod_id text UNIQUE,
+                                                                                  download_flag integer default 0, title text);
 
 	CREATE INDEX asmr_download__index_item_prod_id ON asmr_download (item_prod_id);
     CREATE UNIQUE INDEX asmr_download__index_rjid ON asmr_download (rjid);

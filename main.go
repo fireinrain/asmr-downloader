@@ -6,8 +6,10 @@ import (
 	"asmr-downloader/spider"
 	"asmr-downloader/storage"
 	"asmr-downloader/utils"
+	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 )
@@ -105,7 +107,14 @@ func PageDataTaskHandler(dataChannel chan model.PageResult, authStr string, page
 		fmt.Printf("当前页: %d,访问失败\n", pageIndex)
 		//TODO 记录失败的index
 	}
-	fmt.Printf("获取到数据页: %d\n", pageIndex)
+	var message = ""
+	if subTitleFlag == 0 {
+		message = "无字幕"
+	}
+	if subTitleFlag == 1 {
+		message = "有字幕"
+	}
+	fmt.Printf("获取到%s数据页: %d\n", message, pageIndex)
 	//发送给channel
 	dataChannel <- *infoData
 	//fmt.Printf("数据: %v\n", infoData)
@@ -115,20 +124,23 @@ func PageDataTaskHandler(dataChannel chan model.PageResult, authStr string, page
 func ProcessCollectPageData(wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
-	fmt.Println("process data...")
+	fmt.Println("元数据处理中...")
 
-	index := 0
+	indexSubtitle := 0
 	for rc := range subTitlePageDataChannel {
-		index += 1
-		fmt.Printf("data: %v\n", rc)
+		indexSubtitle += 1
+		//fmt.Printf("data: %v\n", rc)
+		StoreTodb(rc)
 	}
-	fmt.Printf("采集结束,共采集%d页数据\n", index)
-	index2 := 0
+	//fmt.Printf("采集结束,共采集%d页数据\n", indexSubtitle)
+	index := 0
 	for rc := range pageDataChannel {
-		index2 += 1
-		fmt.Printf("data: %v\n", rc)
+		index += 1
+		//fmt.Printf("data: %v\n", rc)
+		StoreTodb(rc)
 	}
-	fmt.Printf("采集结束,共采集%d页数据\n", index)
+	total := indexSubtitle + index
+	fmt.Printf("采集元数据结束,共采集%d页数据\n", total)
 
 	//loop:
 	//	for {
@@ -143,6 +155,41 @@ func ProcessCollectPageData(wg *sync.WaitGroup) {
 	//			break loop
 	//		}
 	//	}
+
+}
+
+func StoreTodb(data model.PageResult) {
+	//查找数据库中是否存在 不存在插入 存在跳过
+	for _, row := range data.Works {
+		id := row.ID
+		err := storage.StoreDb.Db.QueryRow(
+			"select id from asmr_download where id = ?", id).Scan(&id)
+		if err == sql.ErrNoRows {
+			//插入数据
+			tx, err := storage.StoreDb.Db.Begin()
+			if err != nil {
+				log.Fatal("开启事务失败: ", err)
+			}
+			rjid := fmt.Sprintf("RJ%d", row.ID)
+			title := strings.TrimSpace(row.Title)
+
+			_, err = tx.Exec("insert into asmr_download(rjid,item_prod_id,title) values(?,?,?)", rjid, row.ID, title)
+			if err != nil {
+				tx.Rollback()
+				fmt.Println("数据插入失败: ", err)
+				fmt.Println("正在进行数据回滚...")
+			}
+			err = tx.Commit()
+			if err != nil {
+				fmt.Println("数据提交失败：", err)
+			}
+
+		} else if err != nil {
+			log.Fatal("查询数据库出现错误: ", err)
+			return
+		}
+
+	}
 
 }
 
