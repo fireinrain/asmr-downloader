@@ -5,10 +5,12 @@ import (
 	"crypto/tls"
 	"fmt"
 	"github.com/xxjwxc/gowp/workpool"
+	"math/rand"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Client httpClient
@@ -71,4 +73,11 @@ func MosaicStr(inputStr string, mosaicStrTmp string) string {
 		result.WriteString(mosaicStrTmp)
 	}
 	return result.String()
+}
+
+// GenerateReqSeed 生成请求种子 seed参数
+func GenerateReqSeed() int {
+	rand.Seed(time.Now().UnixNano())
+	result := int(100 * rand.Float64())
+	return result
 }

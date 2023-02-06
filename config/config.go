@@ -9,6 +9,12 @@ import (
 	"strconv"
 )
 
+const ConfigFileName = "config.json"
+const MetaDataDb = "asmr.db"
+
+// AsmroneStartPageUrl https://api.asmr.one/api/works?order=create_date&sort=desc&page=1&seed=92&subtitle=0
+const AsmroneStartPageUrl = "https://api.asmr.one"
+
 type Config struct {
 	Account   string `json:"account"`
 	Password  string `json:"password"`
@@ -16,6 +22,8 @@ type Config struct {
 	MaxThread int    `json:"max_thread"`
 	//下载目录
 	DownloadDir string `json:"download_dir"`
+	//元数据库
+	MetaDataDb string `json:"meta_data_db"`
 }
 
 func (receiver *Config) SafePrintInfoStr() string {
@@ -40,6 +48,7 @@ func generateDefaultConfig() {
 		MaxWorker:   1,
 		MaxThread:   1,
 		DownloadDir: "data",
+		MetaDataDb:  "asmr.db",
 	}
 
 	//提示用户输入用户名
@@ -96,4 +105,11 @@ func GetConfig() *Config {
 		os.Exit(0)
 	}
 	return &config
+}
+
+func initMetaDataDb(dbPath string) {
+	//生成sqlite文件
+	if !utils.FileOrDirExists(dbPath) {
+
+	}
 }

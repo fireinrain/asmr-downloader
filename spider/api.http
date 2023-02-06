@@ -1,0 +1,23 @@
+GET https://api.asmr.one/api/works?order=create_date&sort=desc&page=1&seed=67&subtitle=0
+authority: api.asmr.one
+method: GET
+path: /api/works?order=create_date&sort=desc&page=1&seed=67&subtitle=0
+scheme: https
+accept: application/json, text/plain, */*
+accept-encoding: gzip, deflate, br
+accept-language: zh,en;q=0.9,zh-TW;q=0.8,zh-CN;q=0.7,ja;q=0.6
+authorization: replace-with-your-auth-str
+cache-control: no-cache
+origin: https://www.asmr.one
+pragma: no-cache
+referer: https://www.asmr.one/
+sec-ch-ua: "Not?A_Brand";v="8", "Chromium";v="108", "Google Chrome";v="108"
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "macOS"
+sec-fetch-dest: empty
+sec-fetch-mode: cors
+sec-fetch-site: same-site
+user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36
+
+
+

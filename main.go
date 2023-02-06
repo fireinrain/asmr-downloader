@@ -7,8 +7,6 @@ import (
 	"fmt"
 )
 
-const ConfigFileName = "config.json"
-
 //func init() {
 //	fmt.Println("------ASMR.ONE Downloader------")
 //	fmt.Println("---------Power by Euler--------")
@@ -20,16 +18,16 @@ func main() {
 	println("---------version20230207--------")
 	var globalConfig *config.Config
 	//判断是否初次运行
-	globalConfig = checkIfFirstStart(ConfigFileName)
+	globalConfig = checkIfFirstStart(config.ConfigFileName)
 	fmt.Printf("GlobalConfig=%s\n", globalConfig.SafePrintInfoStr())
 	asmrClient := spider.NewASMRClient(globalConfig.MaxWorker, globalConfig)
-
 	err := asmrClient.Login()
 	if err != nil {
 		fmt.Println("登录失败:", err)
 		return
 	}
 	fmt.Println("账号登录成功!")
+	//获取首页
 
 }
 

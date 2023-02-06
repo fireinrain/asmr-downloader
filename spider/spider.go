@@ -2,14 +2,21 @@ package spider
 
 import (
 	"asmr-downloader/config"
+	"asmr-downloader/model"
 	"asmr-downloader/utils"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	browser "github.com/EDDYCJY/fake-useragent"
 	"github.com/xxjwxc/gowp/workpool"
 	"io"
+	"log"
 	"net/http"
+	"strconv"
 )
+
+var ctx = context.Background()
 
 // ASMRClient ASMR 客户端
 type ASMRClient struct {
@@ -68,4 +75,49 @@ func (ac *ASMRClient) Login() error {
 	err = json.Unmarshal(all, &res)
 	ac.Authorization = "Bearer " + res["token"]
 	return nil
+}
+
+func GetIndexPageInfo(authorStr string) (*model.PageResult, error) {
+	var seed int = utils.GenerateReqSeed()
+	randomUserAgent := browser.Random()
+	log.Printf("Random: %s\n", randomUserAgent)
+	var reqUrl = "https://api.asmr.one/api/works?order=create_date&sort=desc&page=1&seed=" + strconv.Itoa(seed) + "&subtitle=0"
+
+	var resp = new(model.PageResult)
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", reqUrl, nil)
+	if err != nil {
+		// Handle error
+	}
+	req.Header.Set("Accept", "application/json, text/plain, */*")
+	//req.Header.Set("Accept-Encoding", "gzip, deflate, br")
+	req.Header.Set("Accept-Language", "zh,en;q=0.9,zh-TW;q=0.8,zh-CN;q=0.7,ja;q=0.6")
+	req.Header.Set("Authorization", "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2FzbXIub25lIiwic3ViIjoicGV0ZXJsaXUiLCJhdWQiOiJodHRwczovL2FzbXIub25lL2FwaSIsIm5hbWUiOiJwZXRlcmxpdSIsImdyb3VwIjoidXNlciIsImlhdCI6MTY3NTYxOTc4MiwiZXhwIjoxNzA3MTU1NzgyfQ.OF5PIjC9G024-_00ujujj8-y1NXfSWOtkOGWOln_XRA")
+	req.Header.Set("Cache-Control", "no-cache")
+	req.Header.Set("Origin", "https://www.asmr.one")
+	req.Header.Set("Pragma", "no-cache")
+	req.Header.Set("Referer", "https://www.asmr.one/")
+	req.Header.Set("Sec-Ch-UA", `"Not?A_Brand";v="8", "Chromium";v="108", "Google Chrome";v="108"`)
+	req.Header.Set("Sec-Ch-Ua-Mobile", "?0")
+	req.Header.Set("Sec-Ch-Ua-Platform", "macOS")
+	req.Header.Set("Sec-Fetch-Dest", "empty")
+	req.Header.Set("Sec-Fetch-Mode", "cors")
+	req.Header.Set("Sec-Fetch-Site", "same-site")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36")
+
+	respond, respError := client.Do(req.WithContext(context.Background()))
+	utils.Client.Put(client)
+
+	if respError != nil {
+		fmt.Println("请求失败: ", respError.Error())
+		return nil, respError
+	}
+	defer func() { _ = respond.Body.Close() }()
+	all, err := io.ReadAll(respond.Body)
+	if err != nil {
+		fmt.Println("获取首页信息失败: ", err)
+		return nil, err
+	}
+	err = json.Unmarshal(all, resp)
+	return resp, nil
 }
