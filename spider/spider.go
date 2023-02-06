@@ -138,3 +138,37 @@ func GetPerPageInfo(authorStr string, pageIndex int, subtitleFlag int) (*model.P
 func GetIndexPageInfo(authorStr string) (*model.PageResult, error) {
 	return GetPerPageInfo(authorStr, 1, 0)
 }
+
+//func CollectPagesData(reqUrls []string) []model.PageResult {
+//	var result []string
+//	//执行的 这里要注意  需要指针类型传入  否则会异常
+//	wg := &sync.WaitGroup{}
+//	//并发控制
+//	limiter := make(chan bool, 10)
+//	defer close(limiter)
+//
+//	response := make(chan string, 20)
+//	wgResponse := &sync.WaitGroup{}
+//	//处理结果 接收结果
+//	go func() {
+//		wgResponse.Add(1)
+//		for rc := range response {
+//			result = append(result, rc)
+//		}
+//		wgResponse.Done()
+//	}()
+//	//开启协程处理请求
+//	for _, url := range urls {
+//		//计数器
+//		wg.Add(1)
+//		//并发控制 10
+//		limiter <- true
+//		go httpGet(url, response, limiter, wg)
+//	}
+//	//发送任务
+//	wg.Wait()
+//	close(response) //关闭 并不影响接收遍历
+//	//处理接收结果
+//	wgResponse.Wait()
+//	return result
+//}

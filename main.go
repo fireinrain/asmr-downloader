@@ -3,6 +3,7 @@ package main
 import (
 	"asmr-downloader/config"
 	"asmr-downloader/spider"
+	"asmr-downloader/storage"
 	"asmr-downloader/utils"
 	"fmt"
 	"log"
@@ -20,7 +21,9 @@ func main() {
 	println("---------version20230207--------")
 	var globalConfig *config.Config
 	//判断是否初次运行
-	globalConfig = checkIfFirstStart(config.ConfigFileName)
+	globalConfig = CheckIfFirstStart(config.ConfigFileName)
+	var storageDb = storage.GetDbInstance()
+	println(storageDb)
 	fmt.Printf("GlobalConfig=%s\n", globalConfig.SafePrintInfoStr())
 	asmrClient := spider.NewASMRClient(globalConfig.MaxWorker, globalConfig)
 	err := asmrClient.Login()
@@ -52,16 +55,18 @@ func main() {
 	}
 	pool.Wait()
 
-	pool.Wait()
-
 }
 
-func checkIfFirstStart(configFile string) *config.Config {
+// CheckIfFirstStart
+//
+//	@Description: 检测是否是第一次运行
+//	@param configFile
+//	@return *config.Config
+func CheckIfFirstStart(configFile string) *config.Config {
 	if utils.FileOrDirExists(configFile) {
 		fmt.Println("程序已初始化完成,正在启动运行...")
 	} else {
 		fmt.Println("检测到初次运行,请进行相关设置...")
 	}
 	return config.GetConfig()
-
 }

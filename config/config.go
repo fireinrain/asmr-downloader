@@ -106,10 +106,3 @@ func GetConfig() *Config {
 	}
 	return &config
 }
-
-func initMetaDataDb(dbPath string) {
-	//生成sqlite文件
-	if !utils.FileOrDirExists(dbPath) {
-
-	}
-}

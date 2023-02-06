@@ -5,6 +5,12 @@ type PageResult struct {
 	Works      []Works    `json:"works"`
 	Pagination Pagination `json:"pagination"`
 }
+type Pagination struct {
+	CurrentPage int `json:"currentPage"`
+	PageSize    int `json:"pageSize"`
+	TotalCount  int `json:"totalCount"`
+}
+
 type RateCountDetail struct {
 	ReviewPoint int `json:"review_point"`
 	Count       int `json:"count"`
@@ -66,11 +72,6 @@ type Works struct {
 	SamCoverURL       string            `json:"samCoverUrl"`
 	ThumbnailCoverURL string            `json:"thumbnailCoverUrl"`
 	MainCoverURL      string            `json:"mainCoverUrl"`
-}
-type Pagination struct {
-	CurrentPage int `json:"currentPage"`
-	PageSize    int `json:"pageSize"`
-	TotalCount  int `json:"totalCount"`
 }
 
 ////////////////////////////////////////// 每页请求响应END ////////////////////////////////////////
