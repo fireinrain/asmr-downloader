@@ -135,8 +135,8 @@ func GetPerPageInfo(authorStr string, pageIndex int, subtitleFlag int) (*model.P
 //	@param authorStr
 //	@return *model.PageResult
 //	@return error
-func GetIndexPageInfo(authorStr string) (*model.PageResult, error) {
-	return GetPerPageInfo(authorStr, 1, 0)
+func GetIndexPageInfo(authorStr string, subTitleFlag int) (*model.PageResult, error) {
+	return GetPerPageInfo(authorStr, 1, subTitleFlag)
 }
 
 //func CollectPagesData(reqUrls []string) []model.PageResult {

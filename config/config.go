@@ -33,6 +33,7 @@ func (receiver *Config) SafePrintInfoStr() string {
 		MaxWorker:   receiver.MaxWorker,
 		MaxThread:   receiver.MaxThread,
 		DownloadDir: receiver.DownloadDir,
+		MetaDataDb:  receiver.MetaDataDb,
 	}
 	marshal, err := json.Marshal(config)
 	if err != nil {
