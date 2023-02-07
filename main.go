@@ -82,31 +82,41 @@ func main() {
 }
 
 func DownloadItemHandler(asmrClient *spider.ASMRClient) {
-	i := 0
+	batchCounter := 0
+	//批量下载大小 默认为1, -1表示一次性全部下载
+	var batchTaskCount = asmrClient.GlobalConfig.BatchTaskCount
+	//批量下载完后休息多少秒(防止服务器ban你)
+	var batchSleepTime = asmrClient.GlobalConfig.BatchSleepTime
+	//是否自动执行 下一个批次
+	var autoForNextBatch = asmrClient.GlobalConfig.AutoForNextBatch
 	for {
+		if batchCounter == batchTaskCount {
+			fmt.Println("--------------------为下一批次下载休眠--------------------")
+			time.Sleep(time.Duration(batchSleepTime) * time.Second)
+			if !autoForNextBatch {
+				_ = utils.PromotForInput("手动确认下一批次任务,按回车键继续进行任务: ", "")
+			}
+			//重置batchCounter
+			batchCounter = 0
+		}
+
 		var id string
 		var subtitleFlag int
 
-		_ = storage.StoreDb.Db.QueryRow("select item_prod_id,subtitle_flag from asmr_download where download_flag =0").Scan(&id, &subtitleFlag)
-		//if err != nil {
-		//	if err == sql.ErrNoRows {
-		//		//没有数据了
-		//		break
-		//	}
-		//	log.Fatal("查询数据库失败: ", err)
-		//}
-		if i == 3 {
-			break
+		err := storage.StoreDb.Db.QueryRow("select item_prod_id,subtitle_flag from asmr_download where download_flag =0").Scan(&id, &subtitleFlag)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				//没有数据了
+				break
+			}
+			log.Fatal("查询数据库失败: ", err)
 		}
-		wg := &sync.WaitGroup{}
-		wg.Add(1)
-		go asmrClient.DownloadItem(id, subtitleFlag, wg)
-		wg.Wait()
+
+		asmrClient.DownloadItem(id, subtitleFlag)
 		//更新ASMR数据下载状态
 		UpdateItemDownStatus(id, subtitleFlag)
-		i++
+		batchCounter += 1
 	}
-	_ = asmrClient.WorkerPool.Wait()
 }
 
 // UpdateItemDownStatus

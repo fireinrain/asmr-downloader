@@ -148,9 +148,9 @@ func (s MetaDataStatics) GetStaticsInfo() DownloadInfoStatics {
 		SubTitleDownloaded:        s.SubTitleUnDownloaded,
 		NoSubTitleCount:           s.NoSubTitleCount,
 		NoSubTitleDownloaded:      s.NoSubTitleUnDownloaded,
-		SubTitleDownloadPercent:   strconv.FormatFloat(subtitledownloadpercent*100, 'f', -1, 64),
-		NoSubTitleDownloadPercent: strconv.FormatFloat(nosubtitledownloadpercent*100, 'f', -1, 64),
-		TotalDownPercent:          strconv.FormatFloat(totaldownpercent*100, 'f', -1, 64),
+		SubTitleDownloadPercent:   strconv.FormatFloat(subtitledownloadpercent*100, 'f', 2, 64),
+		NoSubTitleDownloadPercent: strconv.FormatFloat(nosubtitledownloadpercent*100, 'f', 2, 64),
+		TotalDownPercent:          strconv.FormatFloat(totaldownpercent*100, 'f', 2, 64),
 	}
 }
 

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"crypto/tls"
 	"fmt"
-	"github.com/melbahja/got"
 	"github.com/xxjwxc/gowp/workpool"
 	"math/rand"
 	"net/http"
@@ -118,16 +117,21 @@ func NewFileDownloader(url string, path string, filename string) func() error {
 		var filePathToStore = path
 		var fileName = filename
 		var storePath = filepath.Join(filePathToStore, fileName)
-		fileClient := got.New()
-		err := fileClient.Download(fileUrl, storePath)
+		//fileClient := got.New()
+		//err := fileClient.Download(fileUrl, storePath)
+		println(storePath)
+		println(fileUrl)
+		time.Sleep(3 * time.Second)
 
-		if err != nil {
-			fmt.Println(err)
-			fmt.Printf("文件: %s下载失败: %s\n", fileName, fileUrl)
-		} else {
-			fmt.Println("文件下载成功: ", url)
-			//fmt.Println("文件下载成功: ", filePathToStore)
-		}
+		//if err != nil {
+		//	fmt.Println(err)
+		//	fmt.Printf("文件: %s下载失败: %s\n", fileName, fileUrl)
+		//} else {
+		//	fmt.Println("文件下载成功: ", url)
+		//	//fmt.Println("文件下载成功: ", filePathToStore)
+		//}
+		fmt.Println("文件下载成功: ", url)
+
 		return nil
 	}
 

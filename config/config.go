@@ -20,7 +20,12 @@ type Config struct {
 	Account   string `json:"account"`
 	Password  string `json:"password"`
 	MaxWorker int    `json:"max_worker"`
-	MaxThread int    `json:"max_thread"`
+	//批量下载次数
+	BatchTaskCount int `json:"batch_task_count"`
+	//批量下载完后休息多少秒(防止服务器ban你)
+	BatchSleepTime int `json:"batch_sleep_time"`
+	//是否自动执行 下一个批次
+	AutoForNextBatch bool `json:"auto_for_next_batch"`
 	//下载目录
 	DownloadDir string `json:"download_dir"`
 	//元数据库
@@ -29,12 +34,14 @@ type Config struct {
 
 func (receiver *Config) SafePrintInfoStr() string {
 	config := Config{
-		Account:     receiver.Account,
-		Password:    utils.MosaicStr(receiver.Password, "*"),
-		MaxWorker:   receiver.MaxWorker,
-		MaxThread:   receiver.MaxThread,
-		DownloadDir: receiver.DownloadDir,
-		MetaDataDb:  receiver.MetaDataDb,
+		Account:          receiver.Account,
+		Password:         utils.MosaicStr(receiver.Password, "*"),
+		MaxWorker:        receiver.MaxWorker,
+		BatchTaskCount:   receiver.BatchTaskCount,
+		BatchSleepTime:   receiver.BatchSleepTime,
+		AutoForNextBatch: receiver.AutoForNextBatch,
+		DownloadDir:      receiver.DownloadDir,
+		MetaDataDb:       receiver.MetaDataDb,
 	}
 	marshal, err := json.Marshal(config)
 	if err != nil {
@@ -45,12 +52,14 @@ func (receiver *Config) SafePrintInfoStr() string {
 
 func generateDefaultConfig() {
 	var customConfig = Config{
-		Account:     "guest",
-		Password:    "guest",
-		MaxWorker:   1,
-		MaxThread:   1,
-		DownloadDir: "data",
-		MetaDataDb:  "asmr.db",
+		Account:          "guest",
+		Password:         "guest",
+		MaxWorker:        6,
+		BatchTaskCount:   1,
+		BatchSleepTime:   2,
+		AutoForNextBatch: false,
+		DownloadDir:      "data",
+		MetaDataDb:       "asmr.db",
 	}
 
 	//提示用户输入用户名
@@ -58,12 +67,33 @@ func generateDefaultConfig() {
 	customConfig.Account = account
 	password := utils.PromotForInput("请输入您的密码(默认为guest): ", customConfig.Password)
 	customConfig.Password = password
-	maxWorker := utils.PromotForInput("请输入并发下载数(默认为1): ", strconv.Itoa(customConfig.MaxWorker))
+	maxWorker := utils.PromotForInput("请输入并发下载数(默认为6): ", strconv.Itoa(customConfig.MaxWorker))
 	maxWorkerInt, err := strconv.Atoi(maxWorker)
 	if err != nil {
 		fmt.Println("格式输入错误: ", err)
 	}
 	customConfig.MaxWorker = maxWorkerInt
+
+	batchTaskCount := utils.PromotForInput("请输出批量下载作品数量(默认为1): ", strconv.Itoa(customConfig.BatchTaskCount))
+	i, err := strconv.Atoi(batchTaskCount)
+	if err != nil {
+		fmt.Println("格式输入错误: ", err)
+	}
+	customConfig.BatchTaskCount = i
+
+	batchSleepTime := utils.PromotForInput("请输出批量下载间隔，单位为秒(默认为1): ", strconv.Itoa(customConfig.BatchSleepTime))
+	ii, err := strconv.Atoi(batchSleepTime)
+	if err != nil {
+		fmt.Println("格式输入错误: ", err)
+	}
+	customConfig.BatchSleepTime = ii
+
+	autoForNextBatch := utils.PromotForInput("是否自动执行下一批次下载(Y/N)(默认为N): ", "N")
+	if autoForNextBatch == "Y" {
+		customConfig.AutoForNextBatch = true
+	} else {
+		customConfig.AutoForNextBatch = false
+	}
 	dowwnloadDir := utils.PromotForInput("请输入数据下载目录(默认为data): ", customConfig.DownloadDir)
 	exists := utils.FileOrDirExists(dowwnloadDir)
 	if !exists {

@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 )
 
 var ctx = context.Background()
@@ -103,7 +102,7 @@ func (asmrClient *ASMRClient) GetVoiceTracks(id string) ([]track, error) {
 	return res, nil
 }
 
-func (asmrClient *ASMRClient) DownloadItem(id string, subtitleFlag int, wg *sync.WaitGroup) {
+func (asmrClient *ASMRClient) DownloadItem(id string, subtitleFlag int) {
 	rjId := "RJ" + id
 	fmt.Println("作品 RJ 号: ", rjId)
 	tracks, err := asmrClient.GetVoiceTracks(id)
@@ -119,8 +118,6 @@ func (asmrClient *ASMRClient) DownloadItem(id string, subtitleFlag int, wg *sync
 	}
 	itemStorePath := filepath.Join(basePath, "RJ"+id)
 	asmrClient.EnsureFileDirsExist(tracks, itemStorePath)
-	//下载完更新下载状态
-	wg.Done()
 
 }
 
@@ -144,17 +141,12 @@ func (asmrClient *ASMRClient) DownloadFile(url string, dirPath string, fileName 
 	}
 	savePath := dirPath + "/" + fileName
 	if utils.FileOrDirExists(savePath) {
-		fmt.Printf("文件: %s 已存在, 跳过下载...\n")
+		fmt.Printf("文件: %s 已存在, 跳过下载...\n", savePath)
 		return
 	}
 	fmt.Println("正在下载 " + savePath)
-	downloader := utils.NewFileDownloader(url, dirPath, fileName)
-	asmrClient.WorkerPool.Do(func() error {
-		downloader()
-		return nil
-	})
-	//TODO 卡主
-	//_ = asmrClient.WorkerPool.Wait()
+	_ = utils.NewFileDownloader(url, dirPath, fileName)()
+
 }
 
 // GetPerPageInfo 获取每页的信息
