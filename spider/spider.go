@@ -88,7 +88,7 @@ func GetPerPageInfo(authorStr string, pageIndex int, subtitleFlag int) (*model.P
 	randomUserAgent := browser.Random()
 	//log.Printf("Random: %s\n", randomUserAgent)
 	//var reqUrl = "https://api.asmr.one/api/works?order=create_date&sort=desc&page=1&seed=" + strconv.Itoa(seed) + "&subtitle=0"
-	var reqUrl = fmt.Sprintf("https://api.asmr.one/api/works?order=create_date&sort=desc&page=%d&seed=%d&subtitle=%d", pageIndex, seed, subtitleFlag)
+	var reqUrl = fmt.Sprintf("https://api.asmr.one/api/works?order=id&sort=desc&page=%d&seed=%d&subtitle=%d", pageIndex, seed, subtitleFlag)
 	var resp = new(model.PageResult)
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", reqUrl, nil)

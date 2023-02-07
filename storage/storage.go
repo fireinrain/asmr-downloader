@@ -79,12 +79,12 @@ func (receiver *SqliteStoreEngine) initDbTables() error {
 	_, _ = receiver.Db.Exec(`
 		
 	CREATE TABLE if not exists asmr_download (id integer PRIMARY KEY autoincrement,
-                                                   rjid text UNIQUE,
-                                                             item_prod_id text UNIQUE,
-                                                                                  download_flag integer default 0, title text);
-
+                                                   rjid text ,
+                                                             item_prod_id text ,
+                                                                                  download_flag integer default 0, title text,subtitle_flag integer);
+-- 
 	CREATE INDEX asmr_download__index_item_prod_id ON asmr_download (item_prod_id);
-    CREATE UNIQUE INDEX asmr_download__index_rjid ON asmr_download (rjid);
+    CREATE INDEX asmr_download__index_rjid ON asmr_download (rjid);
 	`)
 
 	return err

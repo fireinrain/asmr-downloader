@@ -18,8 +18,8 @@ import (
 //		fmt.Println("------ASMR.ONE Downloader------")
 //		fmt.Println("---------Power by Euler--------")
 //	}
-var pageDataChannel = make(chan model.PageResult, 5)
-var subTitlePageDataChannel = make(chan model.PageResult, 5)
+var pageDataChannel = make(chan model.PageResult, 4)
+var subTitlePageDataChannel = make(chan model.PageResult, 4)
 
 func main() {
 	println("------ASMR.ONE Downloader------")
@@ -28,9 +28,7 @@ func main() {
 	var globalConfig *config.Config
 	//判断是否初次运行
 	globalConfig = CheckIfFirstStart(config.ConfigFileName)
-	var storageDb = storage.GetDbInstance()
-	//TODO 去掉
-	fmt.Println(storageDb)
+	_ = storage.GetDbInstance()
 	fmt.Printf("GlobalConfig=%s\n", globalConfig.SafePrintInfoStr())
 	asmrClient := spider.NewASMRClient(globalConfig.MaxWorker, globalConfig)
 	err := asmrClient.Login()
@@ -50,9 +48,7 @@ func main() {
 	go MetaDataTaskHandler(authStr, 0, asmrClient2, pageSg)
 	pageSg.Wait()
 	time.Sleep(5 * time.Duration(time.Second))
-	processWg := &sync.WaitGroup{}
-	go ProcessCollectPageData(processWg)
-	processWg.Wait()
+	ProcessCollectPageData()
 
 	time.Sleep(10 * time.Second)
 
@@ -79,7 +75,7 @@ func MetaDataTaskHandler(authStr string, subTitleFlag int, asmrClient *spider.AS
 	var totalCount = indexPageInfo.Pagination.TotalCount
 	var pageSize = indexPageInfo.Pagination.PageSize
 	maxPage := utils.CalculateMaxPage(totalCount, pageSize)
-	maxPage = 2
+	//maxPage = 2
 	pool := asmrClient.WorkerPool
 	//接受数据
 	//并发10
@@ -121,9 +117,7 @@ func PageDataTaskHandler(dataChannel chan model.PageResult, authStr string, page
 	return nil
 }
 
-func ProcessCollectPageData(wg *sync.WaitGroup) {
-	wg.Add(1)
-	defer wg.Done()
+func ProcessCollectPageData() {
 	fmt.Println("元数据处理中...")
 
 	indexSubtitle := 0
@@ -162,8 +156,9 @@ func StoreTodb(data model.PageResult) {
 	//查找数据库中是否存在 不存在插入 存在跳过
 	for _, row := range data.Works {
 		id := row.ID
+		subtitle := row.HasSubtitle
 		err := storage.StoreDb.Db.QueryRow(
-			"select id from asmr_download where id = ?", id).Scan(&id)
+			"select item_prod_id,subtitle_flag from asmr_download where item_prod_id = ? and subtitle_flag = ?", id, subtitle).Scan(&id, &subtitle)
 		if err == sql.ErrNoRows {
 			//插入数据
 			tx, err := storage.StoreDb.Db.Begin()
@@ -172,8 +167,9 @@ func StoreTodb(data model.PageResult) {
 			}
 			rjid := fmt.Sprintf("RJ%d", row.ID)
 			title := strings.TrimSpace(row.Title)
+			subtitleFlag := row.HasSubtitle
 
-			_, err = tx.Exec("insert into asmr_download(rjid,item_prod_id,title) values(?,?,?)", rjid, row.ID, title)
+			_, err = tx.Exec("insert into asmr_download(rjid,item_prod_id,title,subtitle_flag) values(?,?,?,?)", rjid, row.ID, title, subtitleFlag)
 			if err != nil {
 				tx.Rollback()
 				fmt.Println("数据插入失败: ", err)
@@ -187,6 +183,8 @@ func StoreTodb(data model.PageResult) {
 		} else if err != nil {
 			log.Fatal("查询数据库出现错误: ", err)
 			return
+		} else {
+			fmt.Printf("数据库已存在: id = %d--subtitle_flag = %t 该条数据,跳过处理\n\n", id, subtitle)
 		}
 
 	}
