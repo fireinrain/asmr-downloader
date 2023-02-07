@@ -40,16 +40,109 @@ func main() {
 	fmt.Println("账号登录成功!")
 	var authStr = asmrClient.Authorization
 	//检查数据更新
+	ifNeedUpdateMetadata, err := CheckIfNeedUpdateMetadata(authStr)
+	if err != nil {
+		fmt.Println("元数据检查更新失败: ", err)
+	}
+	// Get the current time
+	now := time.Now()
 
+	// Format the time using the standard format string
+	currentTimeStr := now.Format("2006-01-02 15:04:05")
+
+	if ifNeedUpdateMetadata {
+		fmt.Printf("当前时间: %s,网站有新作品更新,正在进行更新...\n", currentTimeStr)
+		FetchAllMetaData(authStr, asmrClient)
+	} else {
+		fmt.Printf("当前时间: %s,网站暂时无新作品...\n", currentTimeStr)
+	}
 	//获取首页
 	//先获取有字幕数据
 	//FetchMetaDataWithSub(authStr, asmrClient, globalConfig)
-	FetchAllMetaData(authStr, asmrClient)
+	//FetchAllMetaData(authStr, asmrClient)
 
-	time.Sleep(10 * time.Second)
+	//检查是否需要进行下载作品MPS
+	needUpdateDownload := CheckIfNeedUpdateDownload()
+	if needUpdateDownload {
+		input := utils.PromotForInput("ASMR作品本地与网站不同步.是否需要同步下载(Y/N,默认为Y)?:", "Y")
+		if input == "Y" {
+			//TODO do download task
+			fmt.Println("正在下载ASMR作品文件,请稍后...")
+		} else {
+			fmt.Println("你以取消下载,程序即将退出.")
+		}
 
+	} else {
+		fmt.Println("ASMR作品本地与网站完全同步.当前无需下载")
+	}
+	//close db con
+	_ = storage.StoreDb.Db.Close()
 }
 
+// CheckIfNeedUpdateDownload
+//
+//	@Description: 检查是否需要下载ASMR
+//
+// 当数据库中asmr_download的所有数据 download_flag 为1
+// 则不需要下载否则需要下载
+func CheckIfNeedUpdateDownload() bool {
+	var metaDataStatics model.MetaDataStatics
+	err := storage.StoreDb.Db.QueryRow("select a.total,\n       b.sub_total,\n       (a.total - b.sub_total)        "+
+		"             as no_sub_total,\n       c.down_sub_total,\n       d.down_no_sub_total,\n       (b.sub_total - c.down_sub_total)      "+
+		"      as undown_sub_total,\n       (a.total - b.sub_total - down_no_sub_total) as undown_no_sub_total,\n      "+
+		" (c.down_sub_total+d.down_no_sub_total) as have_down_total,\n      "+
+		" (a.total - (c.down_sub_total+d.down_no_sub_total)) as undown_total\nfrom (select count(*) as total from asmr_download) as a,\n  "+
+		"   (select count(*) as sub_total from asmr_download where subtitle_flag = 1) as b,\n     (select count(*) as down_sub_total from asmr_download where subtitle_flag = 1 and download_flag = 1) as c,\n    "+
+		" (select count(*) as down_no_sub_total from asmr_download where subtitle_flag = 0 and download_flag = 1) as d").Scan(
+		&metaDataStatics.TotalCount,
+		&metaDataStatics.SubTitleCount,
+		&metaDataStatics.NoSubTitleCount,
+		&metaDataStatics.SubTitleDownloaded,
+		&metaDataStatics.NoSubTitleDownloaded,
+		&metaDataStatics.SubTitleUnDownloaded,
+		&metaDataStatics.NoSubTitleUnDownloaded,
+		&metaDataStatics.HavenDownTotal,
+		&metaDataStatics.UnDownTotal)
+	if err != nil {
+		log.Fatal("查询统计信息出错: ", err)
+	}
+	staticsInfo := metaDataStatics.GetStaticsInfo()
+	infoStr := staticsInfo.PrettyInfoStr()
+	fmt.Println(infoStr)
+	if metaDataStatics.TotalCount > (metaDataStatics.SubTitleDownloaded + metaDataStatics.NoSubTitleDownloaded) {
+		return true
+	}
+	return false
+}
+
+// CheckIfNeedUpdateMetadata
+//
+//	@Description: 判断是否需要从网站跟下元数据
+//	@param authStr
+//	@return bool
+//	@return error
+func CheckIfNeedUpdateMetadata(authStr string) (bool, error) {
+	indexPageInfo, err := spider.GetAllIndexPageInfo(authStr)
+	if err != nil {
+		log.Printf("ASMR one 首页数据获取失败: %s\n", err.Error())
+	}
+	//查询数据
+	var total int
+	err = storage.StoreDb.Db.QueryRow("select count(*) as total from asmr_download").Scan(&total)
+	if err != nil {
+		log.Fatal("查询总数据条数出错: ", err)
+	}
+	if indexPageInfo.Pagination.TotalCount != total {
+		return true, nil
+	}
+	return false, nil
+}
+
+// FetchAllMetaData
+//
+//	@Description: 提取所有元数据
+//	@param authStr
+//	@param asmrClient
 func FetchAllMetaData(authStr string, asmrClient *spider.ASMRClient) {
 	pageSg := &sync.WaitGroup{}
 	pageSg.Add(2)
