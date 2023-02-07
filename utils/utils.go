@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"crypto/tls"
 	"fmt"
+	"github.com/melbahja/got"
 	"github.com/xxjwxc/gowp/workpool"
 	"math/rand"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -101,4 +103,32 @@ func CalculateMaxPage(totalCount int, pageSize int) int {
 		i += 1
 	}
 	return i
+}
+
+// NewFileDownloader
+//
+//	@Description: 下载文件
+//	@param url
+//	@param path
+//	@param filename
+//	@return func()
+func NewFileDownloader(url string, path string, filename string) func() error {
+	return func() error {
+		var fileUrl = url
+		var filePathToStore = path
+		var fileName = filename
+		var storePath = filepath.Join(filePathToStore, fileName)
+		fileClient := got.New()
+		err := fileClient.Download(fileUrl, storePath)
+
+		if err != nil {
+			fmt.Println(err)
+			fmt.Printf("文件: %s下载失败: %s\n", fileName, fileUrl)
+		} else {
+			fmt.Println("文件下载成功: ", url)
+			//fmt.Println("文件下载成功: ", filePathToStore)
+		}
+		return nil
+	}
+
 }

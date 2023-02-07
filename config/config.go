@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 )
 
@@ -67,9 +68,16 @@ func generateDefaultConfig() {
 	exists := utils.FileOrDirExists(dowwnloadDir)
 	if !exists {
 		fmt.Println("设置的下载目录不存在,尝试自动生成: " + dowwnloadDir)
-		err := os.MkdirAll(dowwnloadDir, os.ModePerm)
+		subtitleDir := filepath.Join(dowwnloadDir, "subtitle")
+		nosubtitleDir := filepath.Join(dowwnloadDir, "nosubtitle")
+
+		err := os.MkdirAll(subtitleDir, os.ModePerm)
 		if err != nil {
-			fmt.Println("自动创建下载目录失败: " + dowwnloadDir)
+			fmt.Println("自动创建下载目录失败: " + subtitleDir)
+		}
+		err = os.MkdirAll(nosubtitleDir, os.ModePerm)
+		if err != nil {
+			fmt.Println("自动创建下载目录失败: " + subtitleDir)
 		}
 	}
 	customConfig.DownloadDir = dowwnloadDir

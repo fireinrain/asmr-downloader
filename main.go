@@ -68,7 +68,8 @@ func main() {
 		if input == "Y" {
 			//TODO do download task
 			fmt.Println("正在下载ASMR作品文件,请稍后...")
-
+			DownloadItemHandler(asmrClient)
+			fmt.Println("当前下载任务已完成...")
 		} else {
 			fmt.Println("你以取消下载,程序即将退出.")
 		}
@@ -78,6 +79,65 @@ func main() {
 	}
 	//close db con
 	_ = storage.StoreDb.Db.Close()
+}
+
+func DownloadItemHandler(asmrClient *spider.ASMRClient) {
+	i := 0
+	for {
+		var id string
+		var subtitleFlag int
+
+		_ = storage.StoreDb.Db.QueryRow("select item_prod_id,subtitle_flag from asmr_download where download_flag =0").Scan(&id, &subtitleFlag)
+		//if err != nil {
+		//	if err == sql.ErrNoRows {
+		//		//没有数据了
+		//		break
+		//	}
+		//	log.Fatal("查询数据库失败: ", err)
+		//}
+		if i == 3 {
+			break
+		}
+		wg := &sync.WaitGroup{}
+		wg.Add(1)
+		go asmrClient.DownloadItem(id, subtitleFlag, wg)
+		wg.Wait()
+		//更新ASMR数据下载状态
+		UpdateItemDownStatus(id, subtitleFlag)
+		i++
+	}
+	_ = asmrClient.WorkerPool.Wait()
+}
+
+// UpdateItemDownStatus
+//
+//	@Description: 下载完音频数据更新下载状态
+//	@param itemProdId
+//	@param subtitleFlag
+func UpdateItemDownStatus(itemProdId string, subtitleFlag int) {
+	tx, err := storage.StoreDb.Db.Begin()
+	if err != nil {
+		log.Fatal("开启事务失败: ", err)
+	}
+	_, err = tx.Exec("update asmr_download set download_flag = 1 where item_prod_id = ? and subtitle_flag = ?", itemProdId, subtitleFlag)
+	if err != nil {
+		tx.Rollback()
+		fmt.Println("数据下载完成状态更新失败: ", err)
+		fmt.Println("正在进行数据回滚...")
+	}
+	err = tx.Commit()
+	if err != nil {
+		fmt.Println("数据提交失败：", err)
+	}
+	var message = ""
+	if subtitleFlag == 0 {
+		message = "无字幕"
+	}
+	if subtitleFlag == 1 {
+		message = "含字幕"
+	}
+	fmt.Printf("%s数据: RJ%s 下载完成...\n", message, itemProdId)
+
 }
 
 // CheckIfNeedUpdateDownload
@@ -105,6 +165,10 @@ func CheckIfNeedUpdateDownload() bool {
 		&metaDataStatics.HavenDownTotal,
 		&metaDataStatics.UnDownTotal)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			//没有数据 ignore here
+			return true
+		}
 		log.Fatal("查询统计信息出错: ", err)
 	}
 	staticsInfo := metaDataStatics.GetStaticsInfo()
@@ -131,9 +195,15 @@ func CheckIfNeedUpdateMetadata(authStr string) (bool, error) {
 	var total int
 	err = storage.StoreDb.Db.QueryRow("select count(*) as total from asmr_download").Scan(&total)
 	if err != nil {
-		log.Fatal("查询总数据条数出错: ", err)
+		if err == sql.ErrNoRows {
+			//没有数据
+			total = 0
+		} else {
+			log.Fatal("查询总数据条数出错: ", err)
+
+		}
 	}
-	if indexPageInfo.Pagination.TotalCount != total {
+	if indexPageInfo.Pagination.TotalCount > total {
 		return true, nil
 	}
 	return false, nil
@@ -370,12 +440,14 @@ func StoreTodb(data model.PageResult) {
 			if err != nil {
 				fmt.Println("数据提交失败：", err)
 			}
+			fmt.Println("新增数据: ", rjid)
 
 		} else if err != nil {
 			log.Fatal("查询数据库出现错误: ", err)
 			return
 		} else {
-			fmt.Printf("数据库已存在: id = %d--subtitle_flag = %t 该条数据,跳过处理\n\n", id, subtitle)
+			//fmt.Printf("数据库已存在: id = %d--subtitle_flag = %t 该条数据,跳过处理\n\n", id, subtitle)
+			//ignore here
 		}
 
 	}

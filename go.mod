@@ -5,6 +5,7 @@ go 1.20
 require (
 	github.com/EDDYCJY/fake-useragent v0.2.0
 	github.com/mattn/go-sqlite3 v2.0.1+incompatible
+	github.com/melbahja/got v0.7.0
 	github.com/xxjwxc/gowp v0.0.0-20220528192505-f87b7668d4ff
 )
 

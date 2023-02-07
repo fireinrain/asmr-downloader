@@ -12,6 +12,11 @@ import (
 	"github.com/xxjwxc/gowp/workpool"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
 )
 
 var ctx = context.Background()
@@ -98,6 +103,60 @@ func (asmrClient *ASMRClient) GetVoiceTracks(id string) ([]track, error) {
 	return res, nil
 }
 
+func (asmrClient *ASMRClient) DownloadItem(id string, subtitleFlag int, wg *sync.WaitGroup) {
+	rjId := "RJ" + id
+	fmt.Println("作品 RJ 号: ", rjId)
+	tracks, err := asmrClient.GetVoiceTracks(id)
+	if err != nil {
+		fmt.Printf("获取作品: %s音轨失败: %s\n", err.Error())
+		return
+	}
+	basePath := config.GetConfig().DownloadDir
+	if subtitleFlag == 1 {
+		basePath = filepath.Join(basePath, "subtitle")
+	} else if subtitleFlag == 0 {
+		basePath = filepath.Join(basePath, "nosubtitle")
+	}
+	itemStorePath := filepath.Join(basePath, "RJ"+id)
+	asmrClient.EnsureFileDirsExist(tracks, itemStorePath)
+	//下载完更新下载状态
+	wg.Done()
+
+}
+
+func (asmrClient *ASMRClient) EnsureFileDirsExist(tracks []track, basePath string) {
+	path := basePath
+	_ = os.MkdirAll(path, os.ModePerm)
+	for _, t := range tracks {
+		if t.Type != "folder" {
+			asmrClient.DownloadFile(t.MediaDownloadURL, path, t.Title)
+		} else {
+			asmrClient.EnsureFileDirsExist(t.Children, fmt.Sprintf("%s/%s", path, t.Title))
+		}
+	}
+}
+
+func (asmrClient *ASMRClient) DownloadFile(url string, dirPath string, fileName string) {
+	if runtime.GOOS == "windows" {
+		for _, str := range []string{"?", "<", ">", ":", "/", "\\", "*", "|"} {
+			fileName = strings.Replace(fileName, str, "_", -1)
+		}
+	}
+	savePath := dirPath + "/" + fileName
+	if utils.FileOrDirExists(savePath) {
+		fmt.Printf("文件: %s 已存在, 跳过下载...\n")
+		return
+	}
+	fmt.Println("正在下载 " + savePath)
+	downloader := utils.NewFileDownloader(url, dirPath, fileName)
+	asmrClient.WorkerPool.Do(func() error {
+		downloader()
+		return nil
+	})
+	//TODO 卡主
+	//_ = asmrClient.WorkerPool.Wait()
+}
+
 // GetPerPageInfo 获取每页的信息
 //
 //	@Description:
@@ -159,11 +218,11 @@ func GetPerPageInfo(authorStr string, pageIndex int, subtitleFlag int) (*model.P
 
 // GetIndexPageInfo
 //
-//		@Description: 获取首页信息
-//		@param authorStr
-//	 @param subTitleFlag
-//		@return *model.PageResult
-//		@return error
+// @Description: 获取首页信息
+// @param authorStr
+// @param subTitleFlag
+// @return *model.PageResult
+// @return error
 func GetIndexPageInfo(authorStr string, subTitleFlag int) (*model.PageResult, error) {
 	return GetPerPageInfo(authorStr, 1, subTitleFlag)
 }
