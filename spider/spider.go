@@ -88,7 +88,12 @@ func GetPerPageInfo(authorStr string, pageIndex int, subtitleFlag int) (*model.P
 	randomUserAgent := browser.Random()
 	//log.Printf("Random: %s\n", randomUserAgent)
 	//var reqUrl = "https://api.asmr.one/api/works?order=create_date&sort=desc&page=1&seed=" + strconv.Itoa(seed) + "&subtitle=0"
-	var reqUrl = fmt.Sprintf("https://api.asmr.one/api/works?order=id&sort=desc&page=%d&seed=%d&subtitle=%d", pageIndex, seed, subtitleFlag)
+	var reqUrl = ""
+	if subtitleFlag == -1 {
+		reqUrl = fmt.Sprintf("https://api.asmr.one/api/works?order=id&sort=desc&page=%d&seed=%d", pageIndex, seed)
+	} else {
+		reqUrl = fmt.Sprintf("https://api.asmr.one/api/works?order=id&sort=desc&page=%d&seed=%d&subtitle=%d", pageIndex, seed, subtitleFlag)
+	}
 	var resp = new(model.PageResult)
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", reqUrl, nil)
@@ -131,12 +136,23 @@ func GetPerPageInfo(authorStr string, pageIndex int, subtitleFlag int) (*model.P
 
 // GetIndexPageInfo
 //
-//	@Description: 获取首页信息
+//		@Description: 获取首页信息
+//		@param authorStr
+//	 @param subTitleFlag
+//		@return *model.PageResult
+//		@return error
+func GetIndexPageInfo(authorStr string, subTitleFlag int) (*model.PageResult, error) {
+	return GetPerPageInfo(authorStr, 1, subTitleFlag)
+}
+
+// GetAllIndexPageInfo
+//
+//	@Description: 获取所有数据首页信息
 //	@param authorStr
 //	@return *model.PageResult
 //	@return error
-func GetIndexPageInfo(authorStr string, subTitleFlag int) (*model.PageResult, error) {
-	return GetPerPageInfo(authorStr, 1, subTitleFlag)
+func GetAllIndexPageInfo(authorStr string) (*model.PageResult, error) {
+	return GetPerPageInfo(authorStr, 1, -1)
 }
 
 //func CollectPagesData(reqUrls []string) []model.PageResult {

@@ -20,6 +20,7 @@ import (
 //	}
 var pageDataChannel = make(chan model.PageResult, 4)
 var subTitlePageDataChannel = make(chan model.PageResult, 4)
+var collectPageDataChannel = make(chan model.PageResult, 8)
 
 func main() {
 	println("------ASMR.ONE Downloader------")
@@ -38,8 +39,33 @@ func main() {
 	}
 	fmt.Println("账号登录成功!")
 	var authStr = asmrClient.Authorization
+	//检查数据更新
+
 	//获取首页
 	//先获取有字幕数据
+	//FetchMetaDataWithSub(authStr, asmrClient, globalConfig)
+	FetchAllMetaData(authStr, asmrClient)
+
+	time.Sleep(10 * time.Second)
+
+}
+
+func FetchAllMetaData(authStr string, asmrClient *spider.ASMRClient) {
+	pageSg := &sync.WaitGroup{}
+	pageSg.Add(2)
+	go MetaDataAllTaskHandler(authStr, asmrClient, pageSg)
+	time.Sleep(5 * time.Duration(time.Second))
+	go ProcessAllCollectPageData(pageSg)
+	pageSg.Wait()
+}
+
+// FetchMetaDataWithSub
+//
+//	@Description: 按照查询是否带字幕标签运行获取数据程序
+//	@param authStr
+//	@param asmrClient
+//	@param globalConfig
+func FetchMetaDataWithSub(authStr string, asmrClient *spider.ASMRClient, globalConfig *config.Config) {
 	pageSg := &sync.WaitGroup{}
 	pageSg.Add(2)
 	go MetaDataTaskHandler(authStr, 1, asmrClient, pageSg)
@@ -49,11 +75,61 @@ func main() {
 	pageSg.Wait()
 	time.Sleep(5 * time.Duration(time.Second))
 	ProcessCollectPageData()
+}
 
-	time.Sleep(10 * time.Second)
+func MetaDataAllTaskHandler(authStr string, asmrClient *spider.ASMRClient, wg *sync.WaitGroup) {
+	defer wg.Done()
+	indexPageInfo, err := spider.GetAllIndexPageInfo(authStr)
+	if err != nil {
+		log.Printf("ASMR one 首页数据获取失败: %s\n", err.Error())
+	}
+	fmt.Printf("正在获取作品元数据...\n")
+	//计算最大页数
+	var totalCount = indexPageInfo.Pagination.TotalCount
+	var pageSize = indexPageInfo.Pagination.PageSize
+	maxPage := utils.CalculateMaxPage(totalCount, pageSize)
+	//maxPage = 2
+	pool := asmrClient.WorkerPool
+	//接受数据
+	//并发10
+	//limiter := make(chan bool, 20)
+	fetchWg := &sync.WaitGroup{}
+	go func() {
+		fetchWg.Add(1)
+		defer fetchWg.Done()
+		for i := 1; i <= maxPage; i++ { //开启20个请求
+			pageIndex := i
+			pool.Do(func() error {
+				return PageAllDataTaskHandler(collectPageDataChannel, authStr, pageIndex)
+			})
+		}
+		_ = pool.Wait()
+		close(collectPageDataChannel)
+	}()
+	fetchWg.Wait()
 
 }
 
+func PageAllDataTaskHandler(collectPageDataChannel chan model.PageResult, authStr string, pageIndex int) error {
+	infoData, err2 := spider.GetPerPageInfo(authStr, pageIndex, -1)
+	if err2 != nil {
+		fmt.Printf("当前页: %d,访问失败\n", pageIndex)
+		//TODO 记录失败的index
+	}
+	fmt.Printf("获取到数据页: %d\n", pageIndex)
+	//发送给channel
+	collectPageDataChannel <- *infoData
+	//fmt.Printf("数据: %v\n", infoData)
+	return nil
+}
+
+// MetaDataTaskHandler
+//
+//	@Description: 按照有无字幕获取接口数据
+//	@param authStr
+//	@param subTitleFlag
+//	@param asmrClient
+//	@param wg
 func MetaDataTaskHandler(authStr string, subTitleFlag int, asmrClient *spider.ASMRClient, wg *sync.WaitGroup) {
 	defer wg.Done()
 	indexPageInfo, err := spider.GetIndexPageInfo(authStr, subTitleFlag)
@@ -117,6 +193,27 @@ func PageDataTaskHandler(dataChannel chan model.PageResult, authStr string, page
 	return nil
 }
 
+// ProcessAllCollectPageData
+//
+//	@Description: 一个channel处理所有数据
+//	@param wg
+func ProcessAllCollectPageData(wg *sync.WaitGroup) {
+	defer wg.Done()
+	fmt.Println("元数据处理中...")
+
+	index := 0
+	for rc := range collectPageDataChannel {
+		index += 1
+		//fmt.Printf("data: %v\n", rc)
+		StoreTodb(rc)
+	}
+	fmt.Printf("采集元数据结束,共采集%d页数据\n", index)
+
+}
+
+// ProcessCollectPageData
+//
+//	@Description: 分两个channel处理有/无字幕数据
 func ProcessCollectPageData() {
 	fmt.Println("元数据处理中...")
 
