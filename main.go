@@ -68,6 +68,7 @@ func main() {
 		if input == "Y" {
 			//TODO do download task
 			fmt.Println("正在下载ASMR作品文件,请稍后...")
+
 		} else {
 			fmt.Println("你以取消下载,程序即将退出.")
 		}

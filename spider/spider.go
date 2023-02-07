@@ -43,10 +43,10 @@ func NewASMRClient(maxWorker int, globalConfig *config.Config) *ASMRClient {
 }
 
 // Login 登入获取授权信息
-func (ac *ASMRClient) Login() error {
+func (asmrClient *ASMRClient) Login() error {
 	payload, err := json.Marshal(map[string]string{
-		"name":     ac.GlobalConfig.Account,
-		"password": ac.GlobalConfig.Password,
+		"name":     asmrClient.GlobalConfig.Account,
+		"password": asmrClient.GlobalConfig.Password,
 	})
 	if err != nil {
 		fmt.Println("登录失败, 配置文件有误。")
@@ -71,8 +71,31 @@ func (ac *ASMRClient) Login() error {
 	}
 	res := make(map[string]string)
 	err = json.Unmarshal(all, &res)
-	ac.Authorization = "Bearer " + res["token"]
+	asmrClient.Authorization = "Bearer " + res["token"]
 	return nil
+}
+
+func (asmrClient *ASMRClient) GetVoiceTracks(id string) ([]track, error) {
+	client := utils.Client.Get().(*http.Client)
+	req, _ := http.NewRequest("GET", "https://api.asmr.one/api/tracks/"+id, nil)
+	req.Header.Set("Authorization", asmrClient.Authorization)
+	req.Header.Set("Referer", "https://www.asmr.one/")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36")
+	resp, err := client.Do(req)
+	utils.Client.Put(client)
+	if err != nil {
+		fmt.Println("获取音声信息失败:", err)
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	all, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println("获取音声信息失败: ", err)
+		return nil, err
+	}
+	res := make([]track, 0)
+	err = json.Unmarshal(all, &res)
+	return res, nil
 }
 
 // GetPerPageInfo 获取每页的信息
