@@ -32,4 +32,4 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
       - name: Run tests
-        run: go test -v -covermode=count
+        run: go get -d github.com/fireinrain/asmr-downloader && cd ./asmr-downloader && CGO_ENABLED=1 go build .
