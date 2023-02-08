@@ -34,14 +34,14 @@ fi
 if [ "${1}" == "windows" ]
 then
     GOOS=windows
-    go build -v -ldflags "-s -w" -o builds/asmr-downloader-${1}-amd64.exe
+    go build  -o builds/asmr-downloader-${1}-amd64.exe
 elif [ "${1}" == "osx" ]
 then
     GOOS=darwin
-    go build -v -ldflags "-s -w" -o builds/asmr-downloader-darwin-amd64
+    go build  -o builds/asmr-downloader-darwin-amd64
 else
     GOOS=linux
-    go build -v -ldflags "-s -w" -o builds/asmr-downloader-${1}-amd64
+    go build  -o builds/asmr-downloader-${1}-amd64
 fi
 
 #for file in builds/*
