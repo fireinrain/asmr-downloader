@@ -22,9 +22,24 @@ var collectPageDataChannel = make(chan model.PageResult, 8)
 func main() {
 	//获取程序传入的参数
 	//简易下载模式
-	if len(os.Args) == 2 && os.Args[1] != "" {
-		println("正在查询：", os.Args[1])
-		SimpleModeDownload(os.Args[1])
+	if len(os.Args) >= 2 && os.Args[1] != "" {
+		builder := strings.Builder{}
+		container := []string{}
+
+		for k, v := range os.Args {
+			if k == 0 {
+				continue
+			}
+			cleanValue := strings.TrimSpace(v)
+			if !strings.HasPrefix(cleanValue, "RJ") {
+				fmt.Errorf("")
+				log.Fatal("参数格式有误,请重新输入参数并运行")
+			}
+			container = append(container, cleanValue)
+			builder.WriteString(cleanValue + " ")
+		}
+		println("正在查询：", builder.String())
+		SimpleModeDownload(container)
 		return
 	}
 
@@ -42,7 +57,7 @@ func main() {
 		fmt.Println("登录失败:", err)
 		return
 	}
-	fmt.Println("账号登录成功!")
+	fmt.Println("访客账号登录成功!")
 	var authStr = asmrClient.Authorization
 	//检查数据更新
 	ifNeedUpdateMetadata, err := CheckIfNeedUpdateMetadata(authStr)
@@ -86,7 +101,7 @@ func main() {
 	_ = storage.StoreDb.Db.Close()
 }
 
-func SimpleModeDownload(id string) {
+func SimpleModeDownload(idList []string) {
 	c := &config.Config{
 		Account:          "guset",
 		Password:         "guest",
@@ -104,8 +119,16 @@ func SimpleModeDownload(id string) {
 		return
 	}
 	fmt.Println("账号登录成功!")
-	asmrClient.SimpleDownloadItem(id)
-	fmt.Printf("%s: 下载完成\n", id)
+	pool := asmrClient.WorkerPool
+	for i := range idList {
+		value := idList[i]
+		pool.Do(func() error {
+			asmrClient.SimpleDownloadItem(value)
+			return nil
+		})
+	}
+	_ = pool.Wait()
+	fmt.Println("所有任务下载完成,程序即将退出 ")
 
 }
 
