@@ -9,20 +9,25 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"time"
 )
 
-//	func init() {
-//		fmt.Println("------ASMR.ONE Downloader------")
-//		fmt.Println("---------Power by Euler--------")
-//	}
 var pageDataChannel = make(chan model.PageResult, 4)
 var subTitlePageDataChannel = make(chan model.PageResult, 4)
 var collectPageDataChannel = make(chan model.PageResult, 8)
 
 func main() {
+	//获取程序传入的参数
+	//简易下载模式
+	if len(os.Args) == 2 && os.Args[1] != "" {
+		println("正在查询：", os.Args[1])
+		SimpleModeDownload(os.Args[1])
+		return
+	}
+
 	println("------ASMR.ONE Downloader------")
 	println("---------Power by Euler--------")
 	println("---------version20230207--------")
@@ -81,6 +86,33 @@ func main() {
 	_ = storage.StoreDb.Db.Close()
 }
 
+func SimpleModeDownload(id string) {
+	c := &config.Config{
+		Account:          "guset",
+		Password:         "guest",
+		MaxWorker:        6,
+		BatchTaskCount:   1,
+		BatchSleepTime:   1,
+		AutoForNextBatch: false,
+		DownloadDir:      "./",
+		MetaDataDb:       "",
+	}
+	asmrClient := spider.NewASMRClient(6, c)
+	err := asmrClient.Login()
+	if err != nil {
+		fmt.Println("登录失败:", err)
+		return
+	}
+	fmt.Println("账号登录成功!")
+	asmrClient.SimpleDownloadItem(id)
+	fmt.Printf("%s: 下载完成\n", id)
+
+}
+
+// DownloadItemHandler
+//
+//	@Description: ASMR作品下载
+//	@param asmrClient
 func DownloadItemHandler(asmrClient *spider.ASMRClient) {
 	batchCounter := 0
 	//批量下载大小 默认为1, -1表示一次性全部下载
@@ -251,6 +283,12 @@ func FetchMetaDataWithSub(authStr string, asmrClient *spider.ASMRClient, globalC
 	ProcessCollectPageData()
 }
 
+// MetaDataAllTaskHandler
+//
+//	@Description: 下载所有元数据
+//	@param authStr
+//	@param asmrClient
+//	@param wg
 func MetaDataAllTaskHandler(authStr string, asmrClient *spider.ASMRClient, wg *sync.WaitGroup) {
 	defer wg.Done()
 	indexPageInfo, err := spider.GetAllIndexPageInfo(authStr)
@@ -284,6 +322,13 @@ func MetaDataAllTaskHandler(authStr string, asmrClient *spider.ASMRClient, wg *s
 
 }
 
+// PageAllDataTaskHandler
+//
+//	@Description: 获取所有页面元数据
+//	@param collectPageDataChannel
+//	@param authStr
+//	@param pageIndex
+//	@return error
 func PageAllDataTaskHandler(collectPageDataChannel chan model.PageResult, authStr string, pageIndex int) error {
 	infoData, err2 := spider.GetPerPageInfo(authStr, pageIndex, -1)
 	if err2 != nil {
@@ -347,6 +392,14 @@ func MetaDataTaskHandler(authStr string, subTitleFlag int, asmrClient *spider.AS
 
 }
 
+// PageDataTaskHandler
+//
+//	@Description: 页面元数据下载
+//	@param dataChannel
+//	@param authStr
+//	@param pageIndex
+//	@param subTitleFlag
+//	@return error
 func PageDataTaskHandler(dataChannel chan model.PageResult, authStr string, pageIndex int, subTitleFlag int) error {
 	infoData, err2 := spider.GetPerPageInfo(authStr, pageIndex, subTitleFlag)
 	if err2 != nil {
@@ -423,6 +476,10 @@ func ProcessCollectPageData() {
 
 }
 
+// StoreTodb
+//
+//	@Description: 将下载的元数据存储到sqlite3
+//	@param data
 func StoreTodb(data model.PageResult) {
 	//查找数据库中是否存在 不存在插入 存在跳过
 	for _, row := range data.Works {
