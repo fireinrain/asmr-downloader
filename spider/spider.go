@@ -121,6 +121,32 @@ func (asmrClient *ASMRClient) DownloadItem(id string, subtitleFlag int) {
 
 }
 
+// SimpleDownloadItem
+//
+//	@Description: 简易下载模式  下载单个RJ作品
+//	@receiver asmrClient
+//	@param id
+func (asmrClient *ASMRClient) SimpleDownloadItem(id string) {
+	realId := strings.ReplaceAll(id, "RJ", "")
+	rjId := "RJ" + realId
+	fmt.Println("作品 RJ 号: ", rjId)
+	tracks, err := asmrClient.GetVoiceTracks(realId)
+	if err != nil {
+		fmt.Printf("获取作品: %s音轨失败: %s\n", err.Error())
+		return
+	}
+	basePath := asmrClient.GlobalConfig.DownloadDir
+	itemStorePath := filepath.Join(basePath, id)
+	asmrClient.EnsureFileDirsExist(tracks, itemStorePath)
+
+}
+
+// EnsureFileDirsExist
+//
+//	@Description: 确保文件路径存在 存在就下载文件
+//	@receiver asmrClient
+//	@param tracks
+//	@param basePath
 func (asmrClient *ASMRClient) EnsureFileDirsExist(tracks []track, basePath string) {
 	path := basePath
 	_ = os.MkdirAll(path, os.ModePerm)
@@ -133,6 +159,13 @@ func (asmrClient *ASMRClient) EnsureFileDirsExist(tracks []track, basePath strin
 	}
 }
 
+// DownloadFile
+//
+//	@Description: 文件下载
+//	@receiver asmrClient
+//	@param url
+//	@param dirPath
+//	@param fileName
 func (asmrClient *ASMRClient) DownloadFile(url string, dirPath string, fileName string) {
 	if runtime.GOOS == "windows" {
 		for _, str := range []string{"?", "<", ">", ":", "/", "\\", "*", "|"} {

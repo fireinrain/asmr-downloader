@@ -12,6 +12,10 @@ var StoreDb *SqliteStoreEngine
 
 var once sync.Once
 
+// GetDbInstance
+//
+//	@Description: 单例存储实例
+//	@return *SqliteStoreEngine
 func GetDbInstance() *SqliteStoreEngine {
 	db, err := sql.Open("sqlite3", config.MetaDataDb)
 	if err != nil {

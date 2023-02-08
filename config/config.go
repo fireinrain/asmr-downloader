@@ -16,6 +16,10 @@ const MetaDataDb = "asmr.db"
 // AsmroneStartPageUrl https://api.asmr.one/api/works?order=create_date&sort=desc&page=1&seed=92&subtitle=0
 const AsmroneStartPageUrl = "https://api.asmr.one"
 
+// Config
+//
+//	Config
+//	@Description: 配置结构体
 type Config struct {
 	Account   string `json:"account"`
 	Password  string `json:"password"`
@@ -32,6 +36,11 @@ type Config struct {
 	MetaDataDb string `json:"meta_data_db"`
 }
 
+// SafePrintInfoStr
+//
+//	@Description: 格式配置信息
+//	@receiver receiver
+//	@return string
 func (receiver *Config) SafePrintInfoStr() string {
 	config := Config{
 		Account:          receiver.Account,
@@ -50,6 +59,9 @@ func (receiver *Config) SafePrintInfoStr() string {
 	return string(marshal)
 }
 
+// generateDefaultConfig
+//
+//	@Description: 生成默认配置
 func generateDefaultConfig() {
 	var customConfig = Config{
 		Account:          "guest",
@@ -122,6 +134,10 @@ func generateDefaultConfig() {
 	//os.Exit(0)
 }
 
+// GetConfig
+//
+//	@Description: 获取配置
+//	@return *Config
 func GetConfig() *Config {
 	if _, err := os.Stat("config.json"); os.IsNotExist(err) {
 		generateDefaultConfig()
