@@ -19,6 +19,8 @@ A tool for download asmr media from asmr.one(Thanks for the asmr.one)
 支持传入多RJ id,即可直接下载RJXXXX 到当前目录
 
 ```
+# 可执行文件下载
+下载仓库中bin目录中的文件,难受github action 配置过不了。
 
 
 特别感谢:
