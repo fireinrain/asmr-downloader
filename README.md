@@ -12,11 +12,11 @@ A tool for download asmr media from asmr.one(Thanks for the asmr.one)
 ```bash
 在bash中或者是cmd中, 运行
 
-`asmr-downloader` RJXXXX
+`asmr-downloader` RJXXXX RJXXXX ....
 
-或者 `asmr-downloader.exe RJXXXX`
+或者 `asmr-downloader.exe RJXXXX RXXXX ...`
 
-即可直接下载RJXXXX 到当前目录
+支持传入多RJ id,即可直接下载RJXXXX 到当前目录
 
 ```
 
