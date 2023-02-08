@@ -1,7 +1,7 @@
 # asmr-downloader
 A tool for download asmr media from asmr.one(Thanks for the asmr.one)
 
-![img.png](images/img.png)
+![img-1.png](images/img-1.png)
 
 # 使用说明
 ```bash
