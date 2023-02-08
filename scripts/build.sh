@@ -34,6 +34,8 @@ fi
 if [ "${1}" == "windows" ]
 then
     GOOS=windows
+#    if you need enable cgo use this command to compile
+#    CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++ GOOS=windows GOARCH=amd64 go build -x -v -ldflags "-s -w" -o asmr-download.exe
     go build  -o builds/asmr-downloader-${1}-amd64.exe
 elif [ "${1}" == "osx" ]
 then

@@ -57,7 +57,7 @@ func main() {
 		fmt.Println("登录失败:", err)
 		return
 	}
-	fmt.Println("访客账号登录成功!")
+	fmt.Println("账号登录成功!")
 	var authStr = asmrClient.Authorization
 	//检查数据更新
 	ifNeedUpdateMetadata, err := CheckIfNeedUpdateMetadata(authStr)
@@ -118,7 +118,7 @@ func SimpleModeDownload(idList []string) {
 		fmt.Println("登录失败:", err)
 		return
 	}
-	fmt.Println("账号登录成功!")
+	fmt.Println("访客账号登录成功!")
 	pool := asmrClient.WorkerPool
 	for i := range idList {
 		value := idList[i]

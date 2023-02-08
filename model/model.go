@@ -133,7 +133,7 @@ type DownloadInfoStatics struct {
 //	@Description: 生成统计信息
 //	@receiver s
 //	@return DownloadInfoStatics
-func (s MetaDataStatics) GetStaticsInfo() DownloadInfoStatics {
+func (s *MetaDataStatics) GetStaticsInfo() *DownloadInfoStatics {
 	now := time.Now()
 	// Format the time using the standard format string
 	currentTime := now.Format("2006-01-02 15:04:05")
@@ -141,13 +141,16 @@ func (s MetaDataStatics) GetStaticsInfo() DownloadInfoStatics {
 	nosubtitledownloadpercent, _ := strconv.ParseFloat(fmt.Sprintf("%.4f", float64(s.NoSubTitleDownloaded)/float64(s.NoSubTitleCount)), 64)
 	totaldownpercent, _ := strconv.ParseFloat(fmt.Sprintf("%.4f", float64(s.SubTitleDownloaded+s.NoSubTitleDownloaded)/float64(s.TotalCount)), 64)
 
-	return DownloadInfoStatics{
-		TimeNow:                   currentTime,
-		TotalCount:                s.TotalCount,
-		SubTitleCount:             s.SubTitleCount,
-		SubTitleDownloaded:        s.SubTitleUnDownloaded,
-		NoSubTitleCount:           s.NoSubTitleCount,
-		NoSubTitleDownloaded:      s.NoSubTitleUnDownloaded,
+	return &DownloadInfoStatics{
+		TimeNow:    currentTime,
+		TotalCount: s.TotalCount,
+
+		SubTitleCount:      s.SubTitleCount,
+		SubTitleDownloaded: s.SubTitleDownloaded,
+
+		NoSubTitleCount:      s.NoSubTitleCount,
+		NoSubTitleDownloaded: s.NoSubTitleDownloaded,
+
 		SubTitleDownloadPercent:   strconv.FormatFloat(subtitledownloadpercent*100, 'f', 2, 64),
 		NoSubTitleDownloadPercent: strconv.FormatFloat(nosubtitledownloadpercent*100, 'f', 2, 64),
 		TotalDownPercent:          strconv.FormatFloat(totaldownpercent*100, 'f', 2, 64),
@@ -159,15 +162,18 @@ func (s MetaDataStatics) GetStaticsInfo() DownloadInfoStatics {
 //	@Description: 下载统计打印
 //	@receiver statics
 //	@return string
-func (statics DownloadInfoStatics) PrettyInfoStr() string {
+func (statics *DownloadInfoStatics) PrettyInfoStr() string {
 	builder := strings.Builder{}
 	builder.WriteString("----------------------\n")
 	builder.WriteString(fmt.Sprintf("当前时间: %s\n", statics.TimeNow))
 	builder.WriteString(fmt.Sprintf("作品总数: %d部\n", statics.TotalCount))
+
 	builder.WriteString(fmt.Sprintf("含字幕作品数: %d部\n", statics.SubTitleCount))
 	builder.WriteString(fmt.Sprintf("含字幕作品已下载数: %d部\n", statics.SubTitleDownloaded))
+
 	builder.WriteString(fmt.Sprintf("无字幕作品数: %d部\n", statics.NoSubTitleCount))
 	builder.WriteString(fmt.Sprintf("无字幕作品已下载数: %d部\n", statics.NoSubTitleDownloaded))
+
 	builder.WriteString(fmt.Sprintf("含字幕作品下载进度: %s%%\n", statics.SubTitleDownloadPercent))
 	builder.WriteString(fmt.Sprintf("无字幕作品下载进度: %s%%\n", statics.NoSubTitleDownloadPercent))
 	builder.WriteString(fmt.Sprintf("总下载进度: %s%%", statics.TotalDownPercent))
