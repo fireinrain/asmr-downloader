@@ -15,6 +15,18 @@ import (
 	"time"
 )
 
+const FailedDownloadFileName = "failed-download.txt"
+
+var FailedDownloadFile *os.File
+
+func init() {
+	f, err := os.OpenFile(FailedDownloadFileName, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		fmt.Println("错误日志文件创建失败: ", err.Error())
+	}
+	FailedDownloadFile = f
+}
+
 // Client httpClient
 var Client = sync.Pool{
 	New: func() interface{} {
@@ -123,12 +135,30 @@ func NewFileDownloader(url string, path string, filename string) func() error {
 
 		if err != nil {
 			fmt.Println(err)
-			fmt.Printf("文件: %s下载失败: %s\n", fileName, fileUrl)
+			//fmt.Printf("文件: %s下载失败: %s\n", fileName, fileUrl)
+			fmt.Printf("文件: %s下载失败: %s\n", fileName, err.Error())
+			//记录失败文件  时间, 文件路径，文件url
+			logStr := GetCurrentDateTime() + "," + filePathToStore + "," + fileUrl + "\n"
+			write := bufio.NewWriter(FailedDownloadFile)
+			_, _ = write.WriteString(logStr)
+			//Flush将缓存的文件真正写入到文件中
+			write.Flush()
 		} else {
-			fmt.Println("文件下载成功: ", url)
+			fmt.Println("文件下载成功: ", fileName)
 			//fmt.Println("文件下载成功: ", filePathToStore)
 		}
 		return nil
 	}
 
+}
+
+// GetCurrentDateTime
+//
+//	@Description: 获取当前时间
+//	@return string
+func GetCurrentDateTime() string {
+	now := time.Now()
+	// Format the time using the standard format string
+	currentTimeStr := now.Format("2006-01-02 15:04:05")
+	return currentTimeStr
 }
