@@ -34,6 +34,8 @@ type Config struct {
 	DownloadDir string `json:"download_dir"`
 	//元数据库
 	MetaDataDb string `json:"meta_data_db"`
+	//最大重试次数
+	MaxFailedRetry int `json:"max_failed_retry"`
 }
 
 // SafePrintInfoStr
@@ -51,6 +53,7 @@ func (receiver *Config) SafePrintInfoStr() string {
 		AutoForNextBatch: receiver.AutoForNextBatch,
 		DownloadDir:      receiver.DownloadDir,
 		MetaDataDb:       receiver.MetaDataDb,
+		MaxFailedRetry:   receiver.MaxFailedRetry,
 	}
 	marshal, err := json.Marshal(config)
 	if err != nil {
@@ -72,6 +75,7 @@ func generateDefaultConfig() {
 		AutoForNextBatch: false,
 		DownloadDir:      "data",
 		MetaDataDb:       "asmr.db",
+		MaxFailedRetry:   3,
 	}
 
 	//提示用户输入用户名
@@ -85,6 +89,13 @@ func generateDefaultConfig() {
 		fmt.Println("格式输入错误: ", err)
 	}
 	customConfig.MaxWorker = maxWorkerInt
+	//最大失败文件下载次数
+	maxFailedRetry := utils.PromotForInput("请输入文件下载失败时最大重试次数(默认为3): ", strconv.Itoa(customConfig.MaxFailedRetry))
+	maxFailedRetryInt, err2 := strconv.Atoi(maxFailedRetry)
+	if err2 != nil {
+		fmt.Println("格式输入错误: ", err2)
+	}
+	customConfig.MaxFailedRetry = maxFailedRetryInt
 
 	batchTaskCount := utils.PromotForInput("请输出批量下载作品数量(默认为1): ", strconv.Itoa(customConfig.BatchTaskCount))
 	i, err := strconv.Atoi(batchTaskCount)

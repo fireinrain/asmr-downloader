@@ -87,6 +87,13 @@ func main() {
 		input := utils.PromotForInput("ASMR作品本地与网站不同步.是否需要同步下载(Y/N,默认为Y)?:", "Y")
 		if input == "Y" {
 			//TODO do download task
+			//检测破碎文件并下载
+			fixBrokenDownloadFile := utils.CheckIfNeedFixBrokenDownloadFile()
+			if fixBrokenDownloadFile {
+				fmt.Println("发现上一次运行存在下载失败的媒体文件，正在进行修复下载...")
+				utils.FixBrokenDownloadFile(asmrClient.GlobalConfig.MaxFailedRetry)
+				fmt.Println("修复下载完成...")
+			}
 			fmt.Println("正在下载ASMR作品文件,请稍后...")
 			DownloadItemHandler(asmrClient)
 			fmt.Println("当前下载任务已完成...")
@@ -144,11 +151,15 @@ func DownloadItemHandler(asmrClient *spider.ASMRClient) {
 	var batchSleepTime = asmrClient.GlobalConfig.BatchSleepTime
 	//是否自动执行 下一个批次
 	var autoForNextBatch = asmrClient.GlobalConfig.AutoForNextBatch
+	// 失败作品重试次数
+	var maxRetry = asmrClient.GlobalConfig.MaxFailedRetry
 	for {
 		if batchCounter == batchTaskCount {
 			fmt.Println("--------------------为下一批次下载休眠--------------------")
 			time.Sleep(time.Duration(batchSleepTime) * time.Second)
 			if !autoForNextBatch {
+				//处理下载失败的链接
+				utils.FixBrokenDownloadFile(maxRetry)
 				_ = utils.PromotForInput("手动确认下一批次任务,按回车键继续进行任务: ", "")
 			}
 			//重置batchCounter
