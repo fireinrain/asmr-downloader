@@ -179,6 +179,16 @@ func GetCurrentDateTime() string {
 //		@return []string
 //		@return error
 func NewFixFileDownloader(url string, storePath string, resultLines []string) ([]string, error) {
+	//确保路径存在
+	exists := FileOrDirExists(storePath)
+	if !exists {
+		dir := filepath.Dir(storePath)
+		err := os.MkdirAll(dir, os.ModePerm)
+		if err != nil {
+			fmt.Printf("自动创建上一次下载失败文件目录失败: %s\n", err)
+			return nil, nil
+		}
+	}
 	var fileUrl = url
 	fileClient := got.New()
 	err := fileClient.Download(fileUrl, storePath)
