@@ -227,7 +227,6 @@ func FixBrokenDownloadFile(maxRetry int) {
 		fmt.Printf("Error: %s\n", err)
 		return
 	}
-	defer fi.Close()
 
 	br := bufio.NewReader(fi)
 	var resultLine = []string{}
@@ -240,6 +239,7 @@ func FixBrokenDownloadFile(maxRetry int) {
 			resultLine = append(resultLine, string(line))
 		}
 	}
+	fi.Close()
 	var resultContainer = []string{}
 	for i := 0; i < maxRetry; i++ {
 		for index, brokenLine := range resultLine {
