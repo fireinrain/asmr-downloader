@@ -98,7 +98,7 @@ func main() {
 			DownloadItemHandler(asmrClient)
 			fmt.Println("当前下载任务已完成...")
 		} else {
-			fmt.Println("你以取消下载,程序即将退出.")
+			fmt.Println("你已取消下载,程序即将退出.")
 		}
 
 	} else {
