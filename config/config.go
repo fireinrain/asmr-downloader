@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,7 +15,29 @@ const ConfigFileName = "config.json"
 const MetaDataDb = "asmr.db"
 
 // AsmroneStartPageUrl https://api.asmr.one/api/works?order=create_date&sort=desc&page=1&seed=92&subtitle=0
-const AsmroneStartPageUrl = "https://api.asmr.one"
+const AsmrOneStartPageUrl = "https://api.asmr.one"
+const Asmr100StartPageUrl = "https://api.asmr-100.com"
+
+var AsmrBaseApiUrl = ""
+
+func init() {
+	//访问asmr.one
+	client := utils.Client.Get().(*http.Client)
+	req, _ := http.NewRequest("GET", "https://asmr.one", nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36")
+	resp, err := client.Do(req)
+	if err != nil || resp.StatusCode != 200 {
+		fmt.Println("尝试访问asmr.one失败: ", err)
+		fmt.Println("当前使用asmr-100.com访问")
+		AsmrBaseApiUrl = Asmr100StartPageUrl
+	} else {
+		fmt.Println("当前使用asmr.one访问...")
+		AsmrBaseApiUrl = AsmrOneStartPageUrl
+	}
+	utils.Client.Put(client)
+	defer func() { _ = resp.Body.Close() }()
+
+}
 
 // Config
 //

@@ -57,7 +57,7 @@ func (asmrClient *ASMRClient) Login() error {
 		return err
 	}
 	client := utils.Client.Get().(*http.Client)
-	req, _ := http.NewRequest("POST", "https://api.asmr.one/api/auth/me", bytes.NewBuffer(payload))
+	req, _ := http.NewRequest("POST", config.AsmrBaseApiUrl+"/api/auth/me", bytes.NewBuffer(payload))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Referer", "https://www.asmr.one/")
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36")
@@ -81,7 +81,7 @@ func (asmrClient *ASMRClient) Login() error {
 
 func (asmrClient *ASMRClient) GetVoiceTracks(id string) ([]track, error) {
 	client := utils.Client.Get().(*http.Client)
-	req, _ := http.NewRequest("GET", "https://api.asmr.one/api/tracks/"+id, nil)
+	req, _ := http.NewRequest("GET", config.AsmrBaseApiUrl+"/api/tracks/"+id, nil)
 	req.Header.Set("Authorization", asmrClient.Authorization)
 	req.Header.Set("Referer", "https://www.asmr.one/")
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36")
@@ -197,9 +197,9 @@ func GetPerPageInfo(authorStr string, pageIndex int, subtitleFlag int) (*model.P
 	//var reqUrl = "https://api.asmr.one/api/works?order=create_date&sort=desc&page=1&seed=" + strconv.Itoa(seed) + "&subtitle=0"
 	var reqUrl = ""
 	if subtitleFlag == -1 {
-		reqUrl = fmt.Sprintf("https://api.asmr.one/api/works?order=id&sort=desc&page=%d&seed=%d", pageIndex, seed)
+		reqUrl = fmt.Sprintf(config.AsmrBaseApiUrl+"/api/works?order=id&sort=desc&page=%d&seed=%d", pageIndex, seed)
 	} else {
-		reqUrl = fmt.Sprintf("https://api.asmr.one/api/works?order=id&sort=desc&page=%d&seed=%d&subtitle=%d", pageIndex, seed, subtitleFlag)
+		reqUrl = fmt.Sprintf(config.AsmrBaseApiUrl+"/api/works?order=id&sort=desc&page=%d&seed=%d&subtitle=%d", pageIndex, seed, subtitleFlag)
 	}
 	var resp = new(model.PageResult)
 	client := &http.Client{}
