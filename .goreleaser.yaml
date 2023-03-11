@@ -8,6 +8,8 @@ builds:
       - CGO_ENABLED=1
     goos:
       - windows
+    goarch:
+      - amd64
   - id: linux
     env:
       - CGO_ENABLED=1
