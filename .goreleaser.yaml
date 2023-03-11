@@ -3,12 +3,17 @@ before:
     - go mod tidy
 
 builds:
-  - env:
+  - id: windows
+    env:
+      - CGO_ENABLE=1
+    goos:
+        - windows
+  - id: other
+    env:
       - CGO_ENABLED=0
     goos:
-      - linux
-      - windows
-      - darwin
+        - linux
+        - darwin
 
 archives:
   - format_overrides:
