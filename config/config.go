@@ -35,8 +35,7 @@ func init() {
 		AsmrBaseApiUrl = AsmrOneStartPageUrl
 	}
 	utils.Client.Put(client)
-	defer func() { _ = resp.Body.Close() }()
-
+	defer resp.Body.Close()
 }
 
 // Config
