@@ -5,14 +5,18 @@ before:
 builds:
   - id: windows
     env:
-      - CGO_ENABLE=1
+      - CGO_ENABLED=1
     goos:
         - windows
-  - id: other
+  - id: linux
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - linux
+  - id: darwin
     env:
       - CGO_ENABLED=0
     goos:
-        - linux
         - darwin
 
 archives:
