@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: |
-            sudo apt-get install gcc-multilib gcc-mingw-w64
+            sudo apt-get install gcc-multilib g++-multilib gcc-mingw-w64
 
       - uses: actions/checkout@v3
 
