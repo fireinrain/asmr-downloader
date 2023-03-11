@@ -7,7 +7,7 @@ builds:
     env:
       - CGO_ENABLED=1
     goos:
-        - windows
+      - windows
   - id: linux
     env:
       - CGO_ENABLED=1
