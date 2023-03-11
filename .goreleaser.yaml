@@ -17,11 +17,16 @@ builds:
       - CGO_ENABLED=1
     goos:
       - linux
+    goarch:
+      - amd64
   - id: darwin
     env:
       - CGO_ENABLED=0
     goos:
       - darwin
+    goarch:
+      - amd64
+      - arm64
 
 archives:
   - format_overrides:
