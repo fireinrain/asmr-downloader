@@ -20,8 +20,7 @@ A tool for download asmr media from asmr.one(Thanks for the asmr.one)
 
 ```
 # 可执行文件下载
-下载仓库中bin目录中的文件,难受github action 配置过不了。
-
+在边栏进入release页面下载对于系统平台的可执行文件即可。
 
 特别感谢:
 https://github.com/fireinrain/go-asmr-spider.git
