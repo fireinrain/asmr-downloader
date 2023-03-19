@@ -2,6 +2,7 @@ package spider
 
 import (
 	"asmr-downloader/config"
+	"asmr-downloader/log"
 	"asmr-downloader/model"
 	"asmr-downloader/utils"
 	"bytes"
@@ -10,6 +11,7 @@ import (
 	"fmt"
 	browser "github.com/EDDYCJY/fake-useragent"
 	"github.com/xxjwxc/gowp/workpool"
+	"go.uber.org/zap"
 	"io"
 	"net/http"
 	"os"
@@ -53,7 +55,7 @@ func (asmrClient *ASMRClient) Login() error {
 		"password": asmrClient.GlobalConfig.Password,
 	})
 	if err != nil {
-		fmt.Println("登录失败, 配置文件有误。")
+		log.AsmrLog.Error("登录失败, 配置文件有误。")
 		return err
 	}
 	client := utils.Client.Get().(*http.Client)
@@ -64,13 +66,13 @@ func (asmrClient *ASMRClient) Login() error {
 	resp, err := client.Do(req)
 	utils.Client.Put(client)
 	if err != nil {
-		fmt.Println("登录失败, 网络错误。请尝试通过环境变量的方式设置代理。")
+		log.AsmrLog.Error("登录失败, 网络错误。请尝试通过环境变量的方式设置代理。")
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	all, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println("登录失败, 读取响应失败。")
+		log.AsmrLog.Error("登录失败, 读取响应失败。")
 		return err
 	}
 	res := make(map[string]string)
@@ -88,13 +90,13 @@ func (asmrClient *ASMRClient) GetVoiceTracks(id string) ([]track, error) {
 	resp, err := client.Do(req)
 	utils.Client.Put(client)
 	if err != nil {
-		fmt.Println("获取音声信息失败:", err)
+		log.AsmrLog.Error("获取音声信息失败:", zap.String("error", err.Error()))
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	all, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println("获取音声信息失败: ", err)
+		log.AsmrLog.Error("获取音声信息失败: ", zap.String("error", err.Error()))
 		return nil, err
 	}
 	res := make([]track, 0)
@@ -104,10 +106,10 @@ func (asmrClient *ASMRClient) GetVoiceTracks(id string) ([]track, error) {
 
 func (asmrClient *ASMRClient) DownloadItem(id string, subtitleFlag int) {
 	rjId := "RJ" + id
-	fmt.Println("作品 RJ 号: ", rjId)
+	log.AsmrLog.Info("作品 RJ 号: ", zap.String("info", rjId))
 	tracks, err := asmrClient.GetVoiceTracks(id)
 	if err != nil {
-		fmt.Printf("获取作品: %s音轨失败: %s\n", err.Error())
+		log.AsmrLog.Error(fmt.Sprintf("获取作品: %s音轨失败: %s\n", err.Error()))
 		return
 	}
 	basePath := config.GetConfig().DownloadDir
@@ -129,10 +131,10 @@ func (asmrClient *ASMRClient) DownloadItem(id string, subtitleFlag int) {
 func (asmrClient *ASMRClient) SimpleDownloadItem(id string) {
 	realId := strings.ReplaceAll(id, "RJ", "")
 	rjId := "RJ" + realId
-	fmt.Println("作品 RJ 号: ", rjId)
+	log.AsmrLog.Info("作品 RJ 号: ", zap.String("info", rjId))
 	tracks, err := asmrClient.GetVoiceTracks(realId)
 	if err != nil {
-		fmt.Printf("获取作品: %s音轨失败: %s\n", err.Error())
+		log.AsmrLog.Error(fmt.Sprintf("获取作品: %s音轨失败: %s\n", err.Error()))
 		return
 	}
 	basePath := asmrClient.GlobalConfig.DownloadDir
@@ -174,10 +176,10 @@ func (asmrClient *ASMRClient) DownloadFile(url string, dirPath string, fileName 
 	}
 	savePath := dirPath + "/" + fileName
 	if utils.FileOrDirExists(savePath) {
-		fmt.Printf("文件: %s 已存在, 跳过下载...\n", savePath)
+		log.AsmrLog.Info(fmt.Sprintf("文件: %s 已存在, 跳过下载...\n", savePath))
 		return
 	}
-	fmt.Println("正在下载 " + savePath)
+	log.AsmrLog.Info("正在下载 ", zap.String("info", savePath))
 	_ = utils.NewFileDownloader(url, dirPath, fileName)()
 
 }
@@ -228,13 +230,13 @@ func GetPerPageInfo(authorStr string, pageIndex int, subtitleFlag int) (*model.P
 	utils.Client.Put(client)
 
 	if respError != nil {
-		fmt.Println("请求失败: ", respError.Error())
+		log.AsmrLog.Error("请求失败: ", zap.String("error", respError.Error()))
 		return nil, respError
 	}
 	defer func() { _ = respond.Body.Close() }()
 	all, err := io.ReadAll(respond.Body)
 	if err != nil {
-		fmt.Println("获取接口数据失败: ", err)
+		log.AsmrLog.Error("获取接口数据失败: ", zap.String("error", err.Error()))
 		return nil, err
 	}
 	err = json.Unmarshal(all, resp)

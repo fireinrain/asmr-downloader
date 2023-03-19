@@ -164,6 +164,7 @@ func (s *MetaDataStatics) GetStaticsInfo() *DownloadInfoStatics {
 //	@return string
 func (statics *DownloadInfoStatics) PrettyInfoStr() string {
 	builder := strings.Builder{}
+	builder.WriteString("\n")
 	builder.WriteString("----------------------\n")
 	builder.WriteString(fmt.Sprintf("当前时间: %s\n", statics.TimeNow))
 	builder.WriteString(fmt.Sprintf("作品总数: %d部\n", statics.TotalCount))

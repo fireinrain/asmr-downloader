@@ -2,13 +2,14 @@ package main
 
 import (
 	"asmr-downloader/config"
+	"asmr-downloader/log"
 	"asmr-downloader/model"
 	"asmr-downloader/spider"
 	"asmr-downloader/storage"
 	"asmr-downloader/utils"
 	"database/sql"
 	"fmt"
-	"log"
+	"go.uber.org/zap"
 	"os"
 	"strings"
 	"sync"
@@ -20,6 +21,9 @@ var subTitlePageDataChannel = make(chan model.PageResult, 4)
 var collectPageDataChannel = make(chan model.PageResult, 8)
 
 func main() {
+	//释放日志资源文件
+	defer log.LogFile.Close()
+	defer log.AsmrLog.Sync()
 	//获取程序传入的参数
 	//简易下载模式
 	if len(os.Args) >= 2 && os.Args[1] != "" {
@@ -32,37 +36,36 @@ func main() {
 			}
 			cleanValue := strings.TrimSpace(v)
 			if !strings.HasPrefix(cleanValue, "RJ") {
-				fmt.Errorf("")
-				log.Fatal("参数格式有误,请重新输入参数并运行")
+				log.AsmrLog.Fatal("参数格式有误,请重新输入参数并运行")
 			}
 			container = append(container, cleanValue)
 			builder.WriteString(cleanValue + " ")
 		}
-		println("正在查询：", builder.String())
+		log.AsmrLog.Info("正在查询：", zap.String("info", builder.String()))
 		SimpleModeDownload(container)
 		return
 	}
 
-	println("------ASMR.ONE Downloader------")
-	println("---------Power by Euler--------")
-	println("---------version20230207--------")
+	log.AsmrLog.Info("------ASMR.ONE Downloader------")
+	log.AsmrLog.Info("---------Power by Euler--------")
+	log.AsmrLog.Info("---------version20230207--------")
 	var globalConfig *config.Config
 	//判断是否初次运行
 	globalConfig = CheckIfFirstStart(config.ConfigFileName)
 	_ = storage.GetDbInstance()
-	fmt.Printf("GlobalConfig=%s\n", globalConfig.SafePrintInfoStr())
+	log.AsmrLog.Info("", zap.String("info", fmt.Sprintf("GlobalConfig=%s", globalConfig.SafePrintInfoStr())))
 	asmrClient := spider.NewASMRClient(globalConfig.MaxWorker, globalConfig)
 	err := asmrClient.Login()
 	if err != nil {
-		fmt.Println("登录失败:", err)
+		log.AsmrLog.Error("登录失败:", zap.String("error", err.Error()))
 		return
 	}
-	fmt.Println("账号登录成功!")
+	log.AsmrLog.Info("账号登录成功!")
 	var authStr = asmrClient.Authorization
 	//检查数据更新
 	ifNeedUpdateMetadata, err := CheckIfNeedUpdateMetadata(authStr)
 	if err != nil {
-		fmt.Println("元数据检查更新失败: ", err)
+		log.AsmrLog.Error("元数据检查更新失败: ", zap.String("error", err.Error()))
 	}
 	// Get the current time
 	now := time.Now()
@@ -71,10 +74,10 @@ func main() {
 	currentTimeStr := now.Format("2006-01-02 15:04:05")
 
 	if ifNeedUpdateMetadata {
-		fmt.Printf("当前时间: %s,网站有新作品更新,正在进行更新...\n", currentTimeStr)
+		log.AsmrLog.Info(fmt.Sprintf("当前时间: %s,网站有新作品更新,正在进行更新...", currentTimeStr))
 		FetchAllMetaData(authStr, asmrClient)
 	} else {
-		fmt.Printf("当前时间: %s,网站暂时无新作品...\n", currentTimeStr)
+		log.AsmrLog.Info(fmt.Sprintf("当前时间: %s,网站暂时无新作品...", currentTimeStr))
 	}
 	//获取首页
 	//先获取有字幕数据
@@ -90,19 +93,19 @@ func main() {
 			//检测破碎文件并下载
 			fixBrokenDownloadFile := utils.CheckIfNeedFixBrokenDownloadFile()
 			if fixBrokenDownloadFile {
-				fmt.Println("发现上一次运行存在下载失败的媒体文件，正在进行修复下载...")
+				log.AsmrLog.Info("发现上一次运行存在下载失败的媒体文件，正在进行修复下载...")
 				utils.FixBrokenDownloadFile(asmrClient.GlobalConfig.MaxFailedRetry)
-				fmt.Println("修复下载完成...")
+				log.AsmrLog.Info("修复下载完成...")
 			}
-			fmt.Println("正在下载ASMR作品文件,请稍后...")
+			log.AsmrLog.Info("正在下载ASMR作品文件,请稍后...")
 			DownloadItemHandler(asmrClient)
-			fmt.Println("当前下载任务已完成...")
+			log.AsmrLog.Info("当前下载任务已完成...")
 		} else {
-			fmt.Println("你已取消下载,程序即将退出.")
+			log.AsmrLog.Info("你已取消下载,程序即将退出.")
 		}
 
 	} else {
-		fmt.Println("ASMR作品本地与网站完全同步.当前无需下载")
+		log.AsmrLog.Info("ASMR作品本地与网站完全同步.当前无需下载")
 	}
 	//close db con
 	_ = storage.StoreDb.Db.Close()
@@ -122,10 +125,10 @@ func SimpleModeDownload(idList []string) {
 	asmrClient := spider.NewASMRClient(6, c)
 	err := asmrClient.Login()
 	if err != nil {
-		fmt.Println("登录失败:", err)
+		log.AsmrLog.Error("登录失败: ", zap.String("error", err.Error()))
 		return
 	}
-	fmt.Println("访客账号登录成功!")
+	log.AsmrLog.Info("访客账号登录成功!")
 	pool := asmrClient.WorkerPool
 	for i := range idList {
 		value := idList[i]
@@ -135,7 +138,7 @@ func SimpleModeDownload(idList []string) {
 		})
 	}
 	_ = pool.Wait()
-	fmt.Println("所有任务下载完成,程序即将退出 ")
+	log.AsmrLog.Info("所有任务下载完成,程序即将退出 ")
 
 }
 
@@ -155,7 +158,7 @@ func DownloadItemHandler(asmrClient *spider.ASMRClient) {
 	var maxRetry = asmrClient.GlobalConfig.MaxFailedRetry
 	for {
 		if batchCounter == batchTaskCount {
-			fmt.Println("--------------------为下一批次下载休眠--------------------")
+			log.AsmrLog.Info("--------------------为下一批次下载休眠--------------------")
 			time.Sleep(time.Duration(batchSleepTime) * time.Second)
 			if !autoForNextBatch {
 				//处理下载失败的链接
@@ -175,7 +178,7 @@ func DownloadItemHandler(asmrClient *spider.ASMRClient) {
 				//没有数据了
 				break
 			}
-			log.Fatal("查询数据库失败: ", err)
+			log.AsmrLog.Fatal("查询数据库失败: ", zap.String("error", err.Error()))
 		}
 
 		asmrClient.DownloadItem(id, subtitleFlag)
@@ -193,17 +196,17 @@ func DownloadItemHandler(asmrClient *spider.ASMRClient) {
 func UpdateItemDownStatus(itemProdId string, subtitleFlag int) {
 	tx, err := storage.StoreDb.Db.Begin()
 	if err != nil {
-		log.Fatal("开启事务失败: ", err)
+		log.AsmrLog.Fatal("开启事务失败: ", zap.String("fatal", err.Error()))
 	}
 	_, err = tx.Exec("update asmr_download set download_flag = 1 where item_prod_id = ? and subtitle_flag = ?", itemProdId, subtitleFlag)
 	if err != nil {
 		tx.Rollback()
-		fmt.Println("数据下载完成状态更新失败: ", err)
-		fmt.Println("正在进行数据回滚...")
+		log.AsmrLog.Info("数据下载完成状态更新失败: ", zap.String("info", err.Error()))
+		log.AsmrLog.Info("正在进行数据回滚...")
 	}
 	err = tx.Commit()
 	if err != nil {
-		fmt.Println("数据提交失败：", err)
+		log.AsmrLog.Error("数据提交失败：", zap.String("error", err.Error()))
 	}
 	var message = ""
 	if subtitleFlag == 0 {
@@ -212,7 +215,7 @@ func UpdateItemDownStatus(itemProdId string, subtitleFlag int) {
 	if subtitleFlag == 1 {
 		message = "含字幕"
 	}
-	fmt.Printf("%s数据: RJ%s 下载完成...\n", message, itemProdId)
+	log.AsmrLog.Info(fmt.Sprintf("%s数据: RJ%s 下载完成...", message, itemProdId))
 
 }
 
@@ -245,11 +248,11 @@ func CheckIfNeedUpdateDownload() bool {
 			//没有数据 ignore here
 			return true
 		}
-		log.Fatal("查询统计信息出错: ", err)
+		log.AsmrLog.Fatal("查询统计信息出错: ", zap.String("fatal", err.Error()))
 	}
 	staticsInfo := metaDataStatics.GetStaticsInfo()
 	infoStr := staticsInfo.PrettyInfoStr()
-	fmt.Println(infoStr)
+	log.AsmrLog.Info(infoStr)
 	if metaDataStatics.TotalCount > (metaDataStatics.SubTitleDownloaded + metaDataStatics.NoSubTitleDownloaded) {
 		return true
 	}
@@ -265,7 +268,7 @@ func CheckIfNeedUpdateDownload() bool {
 func CheckIfNeedUpdateMetadata(authStr string) (bool, error) {
 	indexPageInfo, err := spider.GetAllIndexPageInfo(authStr)
 	if err != nil {
-		log.Printf("ASMR one 首页数据获取失败: %s\n", err.Error())
+		log.AsmrLog.Error(fmt.Sprintf("ASMR one 首页数据获取失败: %s", err.Error()))
 	}
 	//查询数据
 	var total int
@@ -275,7 +278,7 @@ func CheckIfNeedUpdateMetadata(authStr string) (bool, error) {
 			//没有数据
 			total = 0
 		} else {
-			log.Fatal("查询总数据条数出错: ", err)
+			log.AsmrLog.Fatal("查询总数据条数出错: ", zap.String("fatal", err.Error()))
 
 		}
 	}
@@ -327,9 +330,9 @@ func MetaDataAllTaskHandler(authStr string, asmrClient *spider.ASMRClient, wg *s
 	defer wg.Done()
 	indexPageInfo, err := spider.GetAllIndexPageInfo(authStr)
 	if err != nil {
-		log.Printf("ASMR one 首页数据获取失败: %s\n", err.Error())
+		log.AsmrLog.Error(fmt.Sprintf("ASMR one 首页数据获取失败: %s", err.Error()))
 	}
-	fmt.Printf("正在获取作品元数据...\n")
+	log.AsmrLog.Info("正在获取作品元数据...")
 	//计算最大页数
 	var totalCount = indexPageInfo.Pagination.TotalCount
 	var pageSize = indexPageInfo.Pagination.PageSize
@@ -366,13 +369,13 @@ func MetaDataAllTaskHandler(authStr string, asmrClient *spider.ASMRClient, wg *s
 func PageAllDataTaskHandler(collectPageDataChannel chan model.PageResult, authStr string, pageIndex int) error {
 	infoData, err2 := spider.GetPerPageInfo(authStr, pageIndex, -1)
 	if err2 != nil {
-		fmt.Printf("当前页: %d,访问失败\n", pageIndex)
+		log.AsmrLog.Info(fmt.Sprintf("当前页: %d,访问失败", pageIndex))
 		//TODO 记录失败的index
 	}
-	fmt.Printf("获取到数据页: %d\n", pageIndex)
+	fmt.Printf("获取到数据页: %d", pageIndex)
 	//发送给channel
 	collectPageDataChannel <- *infoData
-	//fmt.Printf("数据: %v\n", infoData)
+	//fmt.Printf("数据: %v", infoData)
 	return nil
 }
 
@@ -397,9 +400,9 @@ func MetaDataTaskHandler(authStr string, subTitleFlag int, asmrClient *spider.AS
 		targetChannel = subTitlePageDataChannel
 	}
 	if err != nil {
-		log.Printf("ASMR one 首页(%s)获取失败: %s\n", message, err.Error())
+		log.AsmrLog.Error(fmt.Sprintf("ASMR one 首页(%s)获取失败: %s", message, err.Error()))
 	}
-	fmt.Printf("正在获取%s作品元数据...\n", message)
+	log.AsmrLog.Info(fmt.Sprintf("正在获取%s作品元数据...", message))
 	//计算最大页数
 	var totalCount = indexPageInfo.Pagination.TotalCount
 	var pageSize = indexPageInfo.Pagination.PageSize
@@ -437,7 +440,7 @@ func MetaDataTaskHandler(authStr string, subTitleFlag int, asmrClient *spider.AS
 func PageDataTaskHandler(dataChannel chan model.PageResult, authStr string, pageIndex int, subTitleFlag int) error {
 	infoData, err2 := spider.GetPerPageInfo(authStr, pageIndex, subTitleFlag)
 	if err2 != nil {
-		fmt.Printf("当前页: %d,访问失败\n", pageIndex)
+		log.AsmrLog.Error(fmt.Sprintf("当前页: %d,访问失败", pageIndex))
 		//TODO 记录失败的index
 	}
 	var message = ""
@@ -447,10 +450,11 @@ func PageDataTaskHandler(dataChannel chan model.PageResult, authStr string, page
 	if subTitleFlag == 1 {
 		message = "有字幕"
 	}
-	fmt.Printf("获取到%s数据页: %d\n", message, pageIndex)
+
+	log.AsmrLog.Info(fmt.Sprintf("获取到%s数据页: %d", message, pageIndex))
 	//发送给channel
 	dataChannel <- *infoData
-	//fmt.Printf("数据: %v\n", infoData)
+	//fmt.Printf("数据: %v", infoData)
 	return nil
 }
 
@@ -460,15 +464,15 @@ func PageDataTaskHandler(dataChannel chan model.PageResult, authStr string, page
 //	@param wg
 func ProcessAllCollectPageData(wg *sync.WaitGroup) {
 	defer wg.Done()
-	fmt.Println("元数据处理中...")
+	log.AsmrLog.Info("元数据处理中...")
 
 	index := 0
 	for rc := range collectPageDataChannel {
 		index += 1
-		//fmt.Printf("data: %v\n", rc)
+		//fmt.Printf("data: %v", rc)
 		StoreTodb(rc)
 	}
-	fmt.Printf("采集元数据结束,共采集%d页数据\n", index)
+	log.AsmrLog.Info(fmt.Sprintf("采集元数据结束,共采集%d页数据", index))
 
 }
 
@@ -476,33 +480,33 @@ func ProcessAllCollectPageData(wg *sync.WaitGroup) {
 //
 //	@Description: 分两个channel处理有/无字幕数据
 func ProcessCollectPageData() {
-	fmt.Println("元数据处理中...")
+	log.AsmrLog.Info("元数据处理中...")
 
 	indexSubtitle := 0
 	for rc := range subTitlePageDataChannel {
 		indexSubtitle += 1
-		//fmt.Printf("data: %v\n", rc)
+		//fmt.Printf("data: %v", rc)
 		StoreTodb(rc)
 	}
-	//fmt.Printf("采集结束,共采集%d页数据\n", indexSubtitle)
+	//fmt.Printf("采集结束,共采集%d页数据", indexSubtitle)
 	index := 0
 	for rc := range pageDataChannel {
 		index += 1
-		//fmt.Printf("data: %v\n", rc)
+		//fmt.Printf("data: %v", rc)
 		StoreTodb(rc)
 	}
 	total := indexSubtitle + index
-	fmt.Printf("采集元数据结束,共采集%d页数据\n", total)
+	log.AsmrLog.Info(fmt.Sprintf("采集元数据结束,共采集%d页数据", total))
 
 	//loop:
 	//	for {
 	//		select {
 	//		case value := <-pageDataChannel:
 	//			counter += 1
-	//			fmt.Printf("data: %v\n", value)
+	//			fmt.Printf("data: %v", value)
 	//		case value := <-subTitlePageDataChannel:
 	//			counter += 1
-	//			fmt.Printf("data: %v\n", value)
+	//			fmt.Printf("data: %v", value)
 	//		default:
 	//			break loop
 	//		}
@@ -525,7 +529,7 @@ func StoreTodb(data model.PageResult) {
 			//插入数据
 			tx, err := storage.StoreDb.Db.Begin()
 			if err != nil {
-				log.Fatal("开启事务失败: ", err)
+				log.AsmrLog.Fatal("开启事务失败: ", zap.String("fatal", err.Error()))
 			}
 			rjid := fmt.Sprintf("RJ%d", row.ID)
 			title := strings.TrimSpace(row.Title)
@@ -534,20 +538,20 @@ func StoreTodb(data model.PageResult) {
 			_, err = tx.Exec("insert into asmr_download(rjid,item_prod_id,title,subtitle_flag) values(?,?,?,?)", rjid, row.ID, title, subtitleFlag)
 			if err != nil {
 				tx.Rollback()
-				fmt.Println("数据插入失败: ", err)
-				fmt.Println("正在进行数据回滚...")
+				log.AsmrLog.Error("数据插入失败: ", zap.String("err", err.Error()))
+				log.AsmrLog.Info("正在进行数据回滚...")
 			}
 			err = tx.Commit()
 			if err != nil {
-				fmt.Println("数据提交失败：", err)
+				log.AsmrLog.Error("数据提交失败：", zap.String("err", err.Error()))
 			}
-			fmt.Println("新增数据: ", rjid)
+			log.AsmrLog.Info("新增数据: " + rjid)
 
 		} else if err != nil {
-			log.Fatal("查询数据库出现错误: ", err)
+			log.AsmrLog.Fatal("查询数据库出现错误: ", zap.String("fatal", err.Error()))
 			return
 		} else {
-			//fmt.Printf("数据库已存在: id = %d--subtitle_flag = %t 该条数据,跳过处理\n\n", id, subtitle)
+			//fmt.Printf("数据库已存在: id = %d--subtitle_flag = %t 该条数据,跳过处理", id, subtitle)
 			//ignore here
 		}
 
@@ -562,9 +566,9 @@ func StoreTodb(data model.PageResult) {
 //	@return *config.Config
 func CheckIfFirstStart(configFile string) *config.Config {
 	if utils.FileOrDirExists(configFile) {
-		fmt.Println("程序已初始化完成,正在启动运行...")
+		log.AsmrLog.Info("程序已初始化完成,正在启动运行...")
 	} else {
-		fmt.Println("检测到初次运行,请进行相关设置...")
+		log.AsmrLog.Info("检测到初次运行,请进行相关设置...")
 	}
 	return config.GetConfig()
 }

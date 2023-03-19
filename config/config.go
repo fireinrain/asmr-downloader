@@ -1,9 +1,10 @@
 package config
 
 import (
+	"asmr-downloader/log"
 	"asmr-downloader/utils"
 	"encoding/json"
-	"fmt"
+	"go.uber.org/zap"
 	"io"
 	"net/http"
 	"os"
@@ -27,11 +28,11 @@ func init() {
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36")
 	resp, err := client.Do(req)
 	if err != nil || resp.StatusCode != 200 {
-		fmt.Println("尝试访问asmr.one失败: ", err)
-		fmt.Println("当前使用asmr-100.com访问")
+		log.AsmrLog.Error("尝试访问asmr.one失败: ", zap.String("error", err.Error()))
+		log.AsmrLog.Info("当前使用asmr-100.com访问")
 		AsmrBaseApiUrl = Asmr100StartPageUrl
 	} else {
-		fmt.Println("当前使用asmr.one访问...")
+		log.AsmrLog.Info("当前使用asmr.one访问...")
 		AsmrBaseApiUrl = AsmrOneStartPageUrl
 	}
 	utils.Client.Put(client)
@@ -79,7 +80,7 @@ func (receiver *Config) SafePrintInfoStr() string {
 	}
 	marshal, err := json.Marshal(config)
 	if err != nil {
-		fmt.Println("序列化配置出错: ", err)
+		log.AsmrLog.Error("序列化配置出错: ", zap.String("error", err.Error()))
 	}
 	return string(marshal)
 }
@@ -108,28 +109,28 @@ func generateDefaultConfig() {
 	maxWorker := utils.PromotForInput("请输入并发下载数(默认为6): ", strconv.Itoa(customConfig.MaxWorker))
 	maxWorkerInt, err := strconv.Atoi(maxWorker)
 	if err != nil {
-		fmt.Println("格式输入错误: ", err)
+		log.AsmrLog.Error("格式输入错误: ", zap.String("error", err.Error()))
 	}
 	customConfig.MaxWorker = maxWorkerInt
 	//最大失败文件下载次数
 	maxFailedRetry := utils.PromotForInput("请输入文件下载失败时最大重试次数(默认为3): ", strconv.Itoa(customConfig.MaxFailedRetry))
 	maxFailedRetryInt, err2 := strconv.Atoi(maxFailedRetry)
 	if err2 != nil {
-		fmt.Println("格式输入错误: ", err2)
+		log.AsmrLog.Error("格式输入错误: ", zap.String("error", err2.Error()))
 	}
 	customConfig.MaxFailedRetry = maxFailedRetryInt
 
 	batchTaskCount := utils.PromotForInput("请输出批量下载作品数量(默认为1): ", strconv.Itoa(customConfig.BatchTaskCount))
 	i, err := strconv.Atoi(batchTaskCount)
 	if err != nil {
-		fmt.Println("格式输入错误: ", err)
+		log.AsmrLog.Error("格式输入错误: ", zap.String("error", err.Error()))
 	}
 	customConfig.BatchTaskCount = i
 
 	batchSleepTime := utils.PromotForInput("请输出批量下载间隔，单位为秒(默认为1): ", strconv.Itoa(customConfig.BatchSleepTime))
 	ii, err := strconv.Atoi(batchSleepTime)
 	if err != nil {
-		fmt.Println("格式输入错误: ", err)
+		log.AsmrLog.Error("格式输入错误: ", zap.String("error", err.Error()))
 	}
 	customConfig.BatchSleepTime = ii
 
@@ -142,28 +143,28 @@ func generateDefaultConfig() {
 	dowwnloadDir := utils.PromotForInput("请输入数据下载目录(默认为data): ", customConfig.DownloadDir)
 	exists := utils.FileOrDirExists(dowwnloadDir)
 	if !exists {
-		fmt.Println("设置的下载目录不存在,尝试自动生成: " + dowwnloadDir)
+		log.AsmrLog.Info("设置的下载目录不存在,尝试自动生成: " + dowwnloadDir)
 		subtitleDir := filepath.Join(dowwnloadDir, "subtitle")
 		nosubtitleDir := filepath.Join(dowwnloadDir, "nosubtitle")
 
 		err := os.MkdirAll(subtitleDir, os.ModePerm)
 		if err != nil {
-			fmt.Println("自动创建下载目录失败: " + subtitleDir)
+			log.AsmrLog.Error("自动创建下载目录失败: " + subtitleDir)
 		}
 		err = os.MkdirAll(nosubtitleDir, os.ModePerm)
 		if err != nil {
-			fmt.Println("自动创建下载目录失败: " + subtitleDir)
+			log.AsmrLog.Error("自动创建下载目录失败: " + subtitleDir)
 		}
 	}
 	customConfig.DownloadDir = dowwnloadDir
 
 	config, err := json.Marshal(customConfig)
 	if err != nil {
-		fmt.Print("序列化配置出错: ", err)
+		log.AsmrLog.Error("序列化配置出错: ", zap.String("error", err.Error()))
 		os.Exit(0)
 	}
 	_ = os.WriteFile("config.json", config, 0644)
-	fmt.Println("已生成配置文件config.json, 如果您之前不做任何输入，默认以访客模式访问。")
+	log.AsmrLog.Info("已生成配置文件config.json, 如果您之前不做任何输入，默认以访客模式访问。")
 	//os.Exit(0)
 }
 
@@ -177,19 +178,19 @@ func GetConfig() *Config {
 	}
 	file, err := os.Open("config.json")
 	if err != nil {
-		fmt.Println("打开配置文件失败", err)
+		log.AsmrLog.Error("打开配置文件失败: ", zap.String("error", err.Error()))
 		os.Exit(0)
 	}
 	defer func() { _ = file.Close() }()
 	all, err := io.ReadAll(file)
 	if err != nil {
-		fmt.Println("读取配置文件失败", err)
+		log.AsmrLog.Error("读取配置文件失败: ", zap.String("error", err.Error()))
 		os.Exit(0)
 	}
 	var config Config
 	err = json.Unmarshal(all, &config)
 	if err != nil {
-		fmt.Println("解析配置文件失败", err)
+		log.AsmrLog.Error("解析配置文件失败: ", zap.String("error", err.Error()))
 		os.Exit(0)
 	}
 	return &config

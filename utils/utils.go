@@ -1,11 +1,13 @@
 package utils
 
 import (
+	"asmr-downloader/log"
 	"bufio"
 	"crypto/tls"
 	"fmt"
 	"github.com/melbahja/got"
 	"github.com/xxjwxc/gowp/workpool"
+	"go.uber.org/zap"
 	"io"
 	"math/rand"
 	"net/http"
@@ -23,7 +25,7 @@ var FailedDownloadFile *os.File
 func init() {
 	f, err := os.OpenFile(FailedDownloadFileName, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
-		fmt.Println("错误日志文件创建失败: ", err.Error())
+		log.AsmrLog.Error("错误日志文件创建失败: ", zap.String("error", err.Error()))
 	}
 	FailedDownloadFile = f
 }
@@ -56,13 +58,13 @@ func FileOrDirExists(path string) bool {
 
 // PromotForInput 获取用户输入
 func PromotForInput(message string, defaultValue string) string {
-	fmt.Println(message)
+	log.AsmrLog.Info(message)
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Scan()
 	value := scanner.Text()
 	err := scanner.Err()
 	if err != nil {
-		fmt.Printf("输入有误: %s\n", value)
+		log.AsmrLog.Info(fmt.Sprintf("输入有误: %s", value))
 		os.Exit(0)
 	}
 	if value == "" {
@@ -135,9 +137,9 @@ func NewFileDownloader(url string, path string, filename string) func() error {
 		err := fileClient.Download(fileUrl, storePath)
 
 		if err != nil {
-			fmt.Println(err)
+			log.AsmrLog.Error(err.Error())
 			//fmt.Printf("文件: %s下载失败: %s\n", fileName, fileUrl)
-			fmt.Printf("文件: %s下载失败: %s\n", fileName, err.Error())
+			log.AsmrLog.Error(fmt.Sprintf("文件: %s下载失败: %s", fileName, err.Error()))
 			//记录失败文件  时间, 文件路径，文件url
 			logStr := GetCurrentDateTime() + "," + storePath + "," + fileUrl + "\n"
 			write := bufio.NewWriter(FailedDownloadFile)
@@ -147,10 +149,10 @@ func NewFileDownloader(url string, path string, filename string) func() error {
 			//清理下载失败的文件碎片
 			err2 := os.Remove(storePath)
 			if err2 != nil {
-				fmt.Println("删除碎片文件失败文件失败:", err2)
+				log.AsmrLog.Error("删除碎片文件失败文件失败:", zap.String("error", err2.Error()))
 			}
 		} else {
-			fmt.Println("文件下载成功: ", fileName)
+			log.AsmrLog.Info("文件下载成功: ", zap.String("info", fileName))
 			//fmt.Println("文件下载成功: ", filePathToStore)
 		}
 		return nil
@@ -185,7 +187,7 @@ func NewFixFileDownloader(url string, storePath string, resultLines []string) ([
 		dir := filepath.Dir(storePath)
 		err := os.MkdirAll(dir, os.ModePerm)
 		if err != nil {
-			fmt.Printf("自动创建上一次下载失败文件目录失败: %s\n", err)
+			log.AsmrLog.Error(fmt.Sprintf("自动创建上一次下载失败文件目录失败: %s", err))
 			return nil, nil
 		}
 	}
@@ -195,14 +197,14 @@ func NewFixFileDownloader(url string, storePath string, resultLines []string) ([
 	//err := errors.New("")
 
 	if err != nil {
-		fmt.Println(err)
+		log.AsmrLog.Error(err.Error())
 		//fmt.Printf("文件: %s下载失败: %s\n", fileName, fileUrl)
-		fmt.Printf("文件: %s下载失败: %s\n", storePath, err.Error())
+		log.AsmrLog.Error(fmt.Sprintf("文件: %s下载失败: %s", storePath, err.Error()))
 		//记录失败文件  时间, 文件路径，文件url
 		logStr := GetCurrentDateTime() + "," + storePath + "," + fileUrl
 		resultLines = append(resultLines, logStr)
 	} else {
-		fmt.Println("文件下载成功: ", storePath)
+		log.AsmrLog.Info("文件下载成功: ", zap.String("info", storePath))
 		//fmt.Println("文件下载成功: ", filePathToStore)
 	}
 	return resultLines, nil
@@ -214,17 +216,17 @@ func NewFixFileDownloader(url string, storePath string, resultLines []string) ([
 //	@Description: 以最大重试方式修复下载出错的文件
 //	@param maxRetry
 func FixBrokenDownloadFile(maxRetry int) {
-	fmt.Println("正在自动处理下载失败的媒体文件,请稍后...")
+	log.AsmrLog.Info("正在自动处理下载失败的媒体文件,请稍后...")
 	//复制下载出错的日志文件
 	var FailedDownloadFileNameTemp = FailedDownloadFileName + ".tmp"
 	err := CopyFile(FailedDownloadFileName, FailedDownloadFileName+".tmp")
 	if err != nil {
-		fmt.Printf("复制文件: %s失败: %s\n", FailedDownloadFileName, err.Error())
+		log.AsmrLog.Error(fmt.Sprintf("复制文件: %s失败: %s", FailedDownloadFileName, err.Error()))
 		return
 	}
 	fi, err := os.Open(FailedDownloadFileNameTemp)
 	if err != nil {
-		fmt.Printf("Error: %s\n", err)
+		log.AsmrLog.Error(fmt.Sprintf("Error: %s", err))
 		return
 	}
 
@@ -243,7 +245,7 @@ func FixBrokenDownloadFile(maxRetry int) {
 	var resultContainer = []string{}
 	for i := 0; i < maxRetry; i++ {
 		for index, brokenLine := range resultLine {
-			fmt.Printf("index: %d,line: %s\n", index, brokenLine)
+			log.AsmrLog.Info(fmt.Sprintf("index: %d,line: %s", index, brokenLine))
 			fileInfos := strings.Split(brokenLine, ",")
 			downloader, _ := NewFixFileDownloader(fileInfos[2], fileInfos[1], resultContainer)
 			resultContainer = downloader
@@ -251,21 +253,21 @@ func FixBrokenDownloadFile(maxRetry int) {
 		if len(resultContainer) <= 0 {
 			break
 		}
-		fmt.Printf("重试下载文件再次出错,重试中(剩余重试次数: %d)...\n", maxRetry-i-1)
+		log.AsmrLog.Info(fmt.Sprintf("重试下载文件再次出错,重试中(剩余重试次数: %d)...", maxRetry-i-1))
 	}
 	//删除temp文件
 	err2 := os.Remove(FailedDownloadFileNameTemp)
 	if err2 != nil {
-		fmt.Println("删除临时文件失败:", err2)
+		log.AsmrLog.Error("删除临时文件失败:", zap.String("error", err2.Error()))
 		return
 	}
 	//清理文件
 	err = FailedDownloadFile.Truncate(0)
 	if err != nil {
-		fmt.Println("清空下载失败日志文件失败:", err)
+		log.AsmrLog.Error("清空下载失败日志文件失败:", zap.String("error", err.Error()))
 		return
 	}
-	fmt.Println("重试下载失败媒体文件已处理完成!")
+	log.AsmrLog.Info("重试下载失败媒体文件已处理完成!")
 
 }
 
@@ -278,7 +280,7 @@ func CheckIfNeedFixBrokenDownloadFile() bool {
 	file, err := os.OpenFile(FailedDownloadFileName, os.O_RDONLY, 0666)
 	defer file.Close()
 	if err != nil {
-		fmt.Printf("打开文件失败: %s\n", err.Error())
+		log.AsmrLog.Error(fmt.Sprintf("打开文件失败: %s", err.Error()))
 		return false
 	}
 	br := bufio.NewReader(file)

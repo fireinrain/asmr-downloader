@@ -2,8 +2,9 @@ package storage
 
 import (
 	"asmr-downloader/config"
+	"asmr-downloader/log"
 	"database/sql"
-	"fmt"
+	"go.uber.org/zap"
 	"sync"
 )
 import _ "github.com/mattn/go-sqlite3"
@@ -19,7 +20,7 @@ var once sync.Once
 func GetDbInstance() *SqliteStoreEngine {
 	db, err := sql.Open("sqlite3", config.MetaDataDb)
 	if err != nil {
-		fmt.Println(err)
+		log.AsmrLog.Error("", zap.String("error", err.Error()))
 		return nil
 	}
 	//defer db.Close()
@@ -31,7 +32,7 @@ func GetDbInstance() *SqliteStoreEngine {
 		//初始化db
 		err := StoreDb.initDbTables()
 		if err != nil {
-			fmt.Println("数据库表初始化失败: ", err.Error())
+			log.AsmrLog.Error("数据库表初始化失败: ", zap.String("error", err.Error()))
 		}
 	})
 	return StoreDb
