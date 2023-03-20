@@ -5,6 +5,8 @@ import (
 	"go.uber.org/zap/zapcore"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 )
 
@@ -39,6 +41,9 @@ func init() {
 	//warn windows下文件名如果有空格会被截断导致文件无法识别
 	var filePath = logDir + string(filepath.Separator) + currentTimeStr + "-asmr.log"
 	filePath = filepath.ToSlash(filePath)
+	if runtime.GOOS == "windows" {
+		filePath = strings.ReplaceAll(filePath, "/", "\\")
+	}
 	//提前创建日志文件
 	logFile, err := os.Create(filePath)
 	if err != nil {
