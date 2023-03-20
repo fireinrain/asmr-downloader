@@ -11,7 +11,7 @@ import (
 var AsmrLog *zap.Logger
 var LogFile *os.File
 
-const logDir = "logs"
+const logDir = "." + string(filepath.Separator) + "logs"
 
 func init() {
 	// 创建一个控制台的 encoder
@@ -33,9 +33,12 @@ func init() {
 	}
 	//当前时间
 	now := time.Now()
+
 	// Format the time using the standard format string
-	currentTimeStr := now.Format("2006-01-02 15:04:05")
+	currentTimeStr := now.Format("2006-01-02-15:04:05")
+	//warn windows下文件名如果有空格会被截断导致文件无法识别
 	var filePath = logDir + string(filepath.Separator) + currentTimeStr + "-asmr.log"
+	filePath = filepath.ToSlash(filePath)
 	//提前创建日志文件
 	logFile, err := os.Create(filePath)
 	if err != nil {
