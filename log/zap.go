@@ -11,7 +11,7 @@ import (
 var AsmrLog *zap.Logger
 var LogFile *os.File
 
-const logDir = "./logs"
+const logDir = "logs"
 
 func init() {
 	// 创建一个控制台的 encoder
