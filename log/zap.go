@@ -43,6 +43,7 @@ func init() {
 	filePath = filepath.ToSlash(filePath)
 	if runtime.GOOS == "windows" {
 		filePath = strings.ReplaceAll(filePath, "/", "\\")
+		filePath = strings.ReplaceAll(filePath, ":", "-")
 	}
 	//提前创建日志文件
 	logFile, err := os.Create(filePath)
