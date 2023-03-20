@@ -35,9 +35,16 @@ func init() {
 	now := time.Now()
 	// Format the time using the standard format string
 	currentTimeStr := now.Format("2006-01-02 15:04:05")
-
+	var filePath = logDir + string(filepath.Separator) + currentTimeStr + "-asmr.log"
+	//提前创建日志文件
+	logFile, err := os.Create(filePath)
+	if err != nil {
+		panic(err)
+	}
+	logFile.Sync()
+	logFile.Close()
 	// 设置日志文件的输出
-	file, _ := os.OpenFile(logDir+string(filepath.Separator)+currentTimeStr+"asmr.log", os.O_CREATE|os.O_APPEND|os.O_RDWR, os.ModePerm)
+	file, _ := os.OpenFile(filePath, os.O_CREATE|os.O_APPEND|os.O_RDWR, os.ModePerm)
 	//defer file.Close()
 	fileOutput := zapcore.AddSync(file)
 
