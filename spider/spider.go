@@ -151,6 +151,12 @@ func (asmrClient *ASMRClient) SimpleDownloadItem(id string) {
 //	@param basePath
 func (asmrClient *ASMRClient) EnsureFileDirsExist(tracks []track, basePath string) {
 	path := basePath
+	//windows 目录错误
+	if runtime.GOOS == "windows" {
+		for _, str := range []string{"?", "<", ">", ":", "*", "|", " "} {
+			path = strings.Replace(path, str, "_", -1)
+		}
+	}
 	_ = os.MkdirAll(path, os.ModePerm)
 	for _, t := range tracks {
 		if t.Type != "folder" {
@@ -170,7 +176,7 @@ func (asmrClient *ASMRClient) EnsureFileDirsExist(tracks []track, basePath strin
 //	@param fileName
 func (asmrClient *ASMRClient) DownloadFile(url string, dirPath string, fileName string) {
 	if runtime.GOOS == "windows" {
-		for _, str := range []string{"?", "<", ">", ":", "/", "\\", "*", "|"} {
+		for _, str := range []string{"?", "<", ">", ":", "/", "\\", "*", "|", " "} {
 			fileName = strings.Replace(fileName, str, "_", -1)
 		}
 	}
