@@ -1,19 +1,21 @@
 package main
 
 import (
+	"database/sql"
+	"fmt"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
+	"go.uber.org/zap"
+
 	"asmr-downloader/config"
 	"asmr-downloader/log"
 	"asmr-downloader/model"
 	"asmr-downloader/spider"
 	"asmr-downloader/storage"
 	"asmr-downloader/utils"
-	"database/sql"
-	"fmt"
-	"go.uber.org/zap"
-	"os"
-	"strings"
-	"sync"
-	"time"
 )
 
 var pageDataChannel = make(chan model.PageResult, 4)

@@ -9,13 +9,14 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	_ "modernc.org/sqlite"
 )
-import _ "github.com/mattn/go-sqlite3"
 
 var haveDoneTxt = "have-download.txt"
 
 func PatchHavenDownload2DB() {
-	db, err := sql.Open("sqlite3", "../asmr.db")
+	db, err := sql.Open("sqlite", "../asmr.db")
 	_ = db
 	if err != nil {
 		log.Fatal(err)

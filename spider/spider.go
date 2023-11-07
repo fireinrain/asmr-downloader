@@ -1,23 +1,24 @@
 package spider
 
 import (
-	"asmr-downloader/config"
-	"asmr-downloader/log"
-	"asmr-downloader/model"
-	"asmr-downloader/utils"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	browser "github.com/EDDYCJY/fake-useragent"
-	"github.com/xxjwxc/gowp/workpool"
-	"go.uber.org/zap"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/xxjwxc/gowp/workpool"
+	"go.uber.org/zap"
+
+	"asmr-downloader/config"
+	"asmr-downloader/log"
+	"asmr-downloader/model"
+	"asmr-downloader/utils"
 )
 
 var ctx = context.Background()
@@ -48,6 +49,18 @@ func NewASMRClient(maxWorker int, globalConfig *config.Config) *ASMRClient {
 	}
 }
 
+func HeadersInit(r *http.Request) *http.Request {
+	r.Header.Set("Referer", "https://www.asmr.one/")
+	r.Header.Set("Origin", "https://www.asmr.one")
+	r.Header.Set("Host", strings.Split(config.AsmrBaseApiUrl, "//")[1])
+	r.Header.Set("Connection", "keep-alive")
+	r.Header.Set("Sec-Fetch-Mode", "cors")
+	r.Header.Set("Sec-Fetch-Site", "cross-site")
+	r.Header.Set("Sec-Fetch-Dest", "empty")
+	r.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36")
+	return r
+}
+
 // Login 登入获取授权信息
 func (asmrClient *ASMRClient) Login() error {
 	payload, err := json.Marshal(map[string]string{
@@ -61,8 +74,7 @@ func (asmrClient *ASMRClient) Login() error {
 	client := utils.Client.Get().(*http.Client)
 	req, _ := http.NewRequest("POST", config.AsmrBaseApiUrl+"/api/auth/me", bytes.NewBuffer(payload))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Referer", "https://www.asmr.one/")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36")
+	req = HeadersInit(req)
 	resp, err := client.Do(req)
 	utils.Client.Put(client)
 	if err != nil {
@@ -85,8 +97,7 @@ func (asmrClient *ASMRClient) GetVoiceTracks(id string) ([]track, error) {
 	client := utils.Client.Get().(*http.Client)
 	req, _ := http.NewRequest("GET", config.AsmrBaseApiUrl+"/api/tracks/"+id, nil)
 	req.Header.Set("Authorization", asmrClient.Authorization)
-	req.Header.Set("Referer", "https://www.asmr.one/")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36")
+	req = HeadersInit(req)
 	resp, err := client.Do(req)
 	utils.Client.Put(client)
 	if err != nil {
@@ -200,7 +211,6 @@ func (asmrClient *ASMRClient) DownloadFile(url string, dirPath string, fileName 
 //	@return error
 func GetPerPageInfo(authorStr string, pageIndex int, subtitleFlag int) (*model.PageResult, error) {
 	var seed int = utils.GenerateReqSeed()
-	randomUserAgent := browser.Random()
 	//log.Printf("Random: %s\n", randomUserAgent)
 	//var reqUrl = "https://api.asmr.one/api/works?order=create_date&sort=desc&page=1&seed=" + strconv.Itoa(seed) + "&subtitle=0"
 	var reqUrl = ""
@@ -216,21 +226,8 @@ func GetPerPageInfo(authorStr string, pageIndex int, subtitleFlag int) (*model.P
 		// Handle error
 		// ignore here
 	}
-	req.Header.Set("Accept", "application/json, text/plain, */*")
-	//req.Header.Set("Accept-Encoding", "gzip, deflate, br")
-	req.Header.Set("Accept-Language", "zh,en;q=0.9,zh-TW;q=0.8,zh-CN;q=0.7,ja;q=0.6")
+	req = HeadersInit(req)
 	req.Header.Set("Authorization", authorStr)
-	req.Header.Set("Cache-Control", "no-cache")
-	req.Header.Set("Origin", "https://www.asmr.one")
-	req.Header.Set("Pragma", "no-cache")
-	req.Header.Set("Referer", "https://www.asmr.one/")
-	req.Header.Set("Sec-Ch-UA", `"Not?A_Brand";v="8", "Chromium";v="108", "Google Chrome";v="108"`)
-	req.Header.Set("Sec-Ch-Ua-Mobile", "?0")
-	req.Header.Set("Sec-Ch-Ua-Platform", "macOS")
-	req.Header.Set("Sec-Fetch-Dest", "empty")
-	req.Header.Set("Sec-Fetch-Mode", "cors")
-	req.Header.Set("Sec-Fetch-Site", "same-site")
-	req.Header.Set("User-Agent", randomUserAgent)
 
 	respond, respError := client.Do(req.WithContext(context.Background()))
 	utils.Client.Put(client)
