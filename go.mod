@@ -6,6 +6,7 @@ require (
 	github.com/melbahja/got v0.7.0
 	github.com/xxjwxc/gowp v0.0.0-20220528192505-f87b7668d4ff
 	go.uber.org/zap v1.10.0
+	golang.org/x/text v0.3.3
 	modernc.org/sqlite v1.27.0
 )
 
