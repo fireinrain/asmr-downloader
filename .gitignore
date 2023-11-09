@@ -18,10 +18,16 @@
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
-*.db
+*.db*
 ds_store
 exe
 # Go workspace file
 go.work
 go.sum
 
+.history/
+dist/
+logs/
+failed-download.txt
+config.json
+data/

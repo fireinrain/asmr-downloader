@@ -1,13 +1,9 @@
 package utils
 
 import (
-	"asmr-downloader/log"
 	"bufio"
 	"crypto/tls"
 	"fmt"
-	"github.com/melbahja/got"
-	"github.com/xxjwxc/gowp/workpool"
-	"go.uber.org/zap"
 	"io"
 	"math/rand"
 	"net/http"
@@ -16,6 +12,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/melbahja/got"
+	"github.com/xxjwxc/gowp/workpool"
+	"go.uber.org/zap"
+	"golang.org/x/text/unicode/norm"
+
+	"asmr-downloader/log"
 )
 
 const FailedDownloadFileName = "failed-download.txt"
@@ -44,16 +47,22 @@ var Client = sync.Pool{
 	},
 }
 
-// FileOrDirExists  判断所给路径文件/文件夹是否存在
+// FileOrDirExists  判断所给路径文件/文件夹是否存在 after unicode normalization
 func FileOrDirExists(path string) bool {
-	_, err := os.Stat(path) //os.Stat获取文件信息
+	path = norm.NFC.String(path)
+	//path = strings.ReplaceAll(path, "/jfs/", "/ASMR/")
+	files, err := os.ReadDir(filepath.Dir(path))
 	if err != nil {
-		if os.IsExist(err) {
-			return true
-		}
 		return false
 	}
-	return true
+
+	for _, file := range files {
+		if norm.NFC.String(file.Name()) == norm.NFC.String(filepath.Base(path)) {
+			return true
+		}
+	}
+	return false
+
 }
 
 // PromotForInput 获取用户输入

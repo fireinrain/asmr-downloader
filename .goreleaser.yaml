@@ -7,14 +7,14 @@ builds:
     env:
       - CC=x86_64-w64-mingw32-gcc
       - CXX=x86_64-w64-mingw32-g++
-      - CGO_ENABLED=1
+      - CGO_ENABLED=0
     goos:
       - windows
     goarch:
       - amd64
   - id: linux
     env:
-      - CGO_ENABLED=1
+      - CGO_ENABLED=0
     goos:
       - linux
     goarch:

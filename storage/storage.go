@@ -1,13 +1,15 @@
 package storage
 
 import (
+	"database/sql"
+	"sync"
+
+	"go.uber.org/zap"
+	_ "modernc.org/sqlite"
+
 	"asmr-downloader/config"
 	"asmr-downloader/log"
-	"database/sql"
-	"go.uber.org/zap"
-	"sync"
 )
-import _ "github.com/mattn/go-sqlite3"
 
 var StoreDb *SqliteStoreEngine
 
@@ -18,7 +20,7 @@ var once sync.Once
 //	@Description: 单例存储实例
 //	@return *SqliteStoreEngine
 func GetDbInstance() *SqliteStoreEngine {
-	db, err := sql.Open("sqlite3", config.MetaDataDb)
+	db, err := sql.Open("sqlite", config.MetaDataDb)
 	if err != nil {
 		log.AsmrLog.Error("", zap.String("error", err.Error()))
 		return nil

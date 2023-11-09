@@ -1,23 +1,26 @@
 package config
 
 import (
-	"asmr-downloader/log"
-	"asmr-downloader/utils"
 	"encoding/json"
-	"go.uber.org/zap"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"go.uber.org/zap"
+
+	"asmr-downloader/log"
+	"asmr-downloader/utils"
 )
 
 const ConfigFileName = "config.json"
 const MetaDataDb = "asmr.db"
 
 // AsmroneStartPageUrl https://api.asmr.one/api/works?order=create_date&sort=desc&page=1&seed=92&subtitle=0
-const AsmrOneStartPageUrl = "https://api.asmr.one"
+// const AsmrOneStartPageUrl = "https://api.asmr.one"
 const Asmr100StartPageUrl = "https://api.asmr-100.com"
+const Asmr200StartPageUrl = "https://api.asmr-200.com"
 
 var AsmrBaseApiUrl = ""
 
@@ -29,11 +32,11 @@ func init() {
 	resp, err := client.Do(req)
 	if err != nil || resp.StatusCode != 200 {
 		log.AsmrLog.Error("尝试访问asmr.one失败: ", zap.String("error", err.Error()))
-		log.AsmrLog.Info("当前使用asmr-100.com访问")
-		AsmrBaseApiUrl = Asmr100StartPageUrl
+		log.AsmrLog.Info("当前使用asmr-200.com访问")
+		AsmrBaseApiUrl = Asmr200StartPageUrl
 	} else {
-		log.AsmrLog.Info("当前使用asmr.one访问...")
-		AsmrBaseApiUrl = AsmrOneStartPageUrl
+		log.AsmrLog.Info("当前使用asmr-100.com访问...")
+		AsmrBaseApiUrl = Asmr100StartPageUrl
 	}
 	utils.Client.Put(client)
 	defer resp.Body.Close()
