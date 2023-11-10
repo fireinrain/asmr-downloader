@@ -32,6 +32,6 @@ asmr-downloader.exe RJXXXX RXXXX ...
 在边栏进入release页面下载对于系统平台的可执行文件即可。
 
 特别感谢:
-https://github.com/fireinrain/go-asmr-spider.git
+https://github.com/DiheChen/go-asmr-spider.git
 
 如果本仓库对你有帮助的话, star是对我最大的支持，万分感谢！
