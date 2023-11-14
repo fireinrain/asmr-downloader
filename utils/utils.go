@@ -232,6 +232,13 @@ func NewFixFileDownloader(url string, storePath string, resultLines []string) ([
 	//err := errors.New("")
 
 	if err != nil {
+		if strings.Contains(err.Error(), "Content-Length") {
+			err = DownloadFile(storePath, fileUrl)
+		}
+		if err == nil {
+			log.AsmrLog.Info("文件下载成功: ", zap.String("info", storePath))
+			return resultLines, nil
+		}
 		log.AsmrLog.Error(err.Error())
 		//fmt.Printf("文件: %s下载失败: %s\n", fileName, fileUrl)
 		log.AsmrLog.Error(fmt.Sprintf("文件: %s下载失败: %s", storePath, err.Error()))
@@ -329,10 +336,6 @@ func CheckIfNeedFixBrokenDownloadFile() bool {
 			resultLine = append(resultLine, string(line))
 		}
 	}
-	if len(resultLine) == 0 {
-		return false
-	}
-	return true
 	return len(resultLine) != 0
 }
 
