@@ -129,6 +129,23 @@ func CalculateMaxPage(totalCount int, pageSize int) int {
 	return i
 }
 
+func DownloadFile(storePath string, fileUrl string) error {
+	resp, err := http.Get(fileUrl)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	out, err := os.Create(storePath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, resp.Body)
+	return err
+}
+
 // NewFileDownloader
 //
 //	@Description: 下载文件
@@ -146,11 +163,20 @@ func NewFileDownloader(url string, path string, filename string) func() error {
 		err := fileClient.Download(fileUrl, storePath)
 
 		if err != nil {
+			// Retry with http.Get
+			if strings.Contains(err.Error(), "Content-Length") {
+				err = DownloadFile(storePath, fileUrl)
+			}
+			if err == nil {
+				log.AsmrLog.Info("文件下载成功: ", zap.String("info", fileName))
+				return nil
+			}
+
 			log.AsmrLog.Error(err.Error())
 			//fmt.Printf("文件: %s下载失败: %s\n", fileName, fileUrl)
 			log.AsmrLog.Error(fmt.Sprintf("文件: %s下载失败: %s", fileName, err.Error()))
 			//记录失败文件  时间, 文件路径，文件url
-			logStr := GetCurrentDateTime() + "," + storePath + "," + fileUrl + "\n"
+			logStr := GetCurrentDateTime() + "|" + storePath + "|" + fileUrl + "\n"
 			write := bufio.NewWriter(FailedDownloadFile)
 			_, _ = write.WriteString(logStr)
 			//Flush将缓存的文件真正写入到文件中
@@ -206,11 +232,18 @@ func NewFixFileDownloader(url string, storePath string, resultLines []string) ([
 	//err := errors.New("")
 
 	if err != nil {
+		if strings.Contains(err.Error(), "Content-Length") {
+			err = DownloadFile(storePath, fileUrl)
+		}
+		if err == nil {
+			log.AsmrLog.Info("文件下载成功: ", zap.String("info", storePath))
+			return resultLines, nil
+		}
 		log.AsmrLog.Error(err.Error())
 		//fmt.Printf("文件: %s下载失败: %s\n", fileName, fileUrl)
 		log.AsmrLog.Error(fmt.Sprintf("文件: %s下载失败: %s", storePath, err.Error()))
 		//记录失败文件  时间, 文件路径，文件url
-		logStr := GetCurrentDateTime() + "," + storePath + "," + fileUrl
+		logStr := GetCurrentDateTime() + "|" + storePath + "|" + fileUrl
 		resultLines = append(resultLines, logStr)
 	} else {
 		log.AsmrLog.Info("文件下载成功: ", zap.String("info", storePath))
@@ -255,7 +288,7 @@ func FixBrokenDownloadFile(maxRetry int) {
 	for i := 0; i < maxRetry; i++ {
 		for index, brokenLine := range resultLine {
 			log.AsmrLog.Info(fmt.Sprintf("index: %d,line: %s", index, brokenLine))
-			fileInfos := strings.Split(brokenLine, ",")
+			fileInfos := strings.Split(brokenLine, "|")
 			downloader, _ := NewFixFileDownloader(fileInfos[2], fileInfos[1], resultContainer)
 			resultContainer = downloader
 		}
@@ -303,10 +336,7 @@ func CheckIfNeedFixBrokenDownloadFile() bool {
 			resultLine = append(resultLine, string(line))
 		}
 	}
-	if len(resultLine) == 0 {
-		return false
-	}
-	return true
+	return len(resultLine) != 0
 }
 
 // CopyFile
