@@ -15,6 +15,9 @@ import (
 
 var haveDoneTxt = "have-download.txt"
 
+// PatchHavenDownload2DB
+// @Description: 将已经下载完成的数据标记为已下载,主要用于收集模式，有些资源你已经下载
+// 可以用这个方式加入到库中
 func PatchHavenDownload2DB() {
 	db, err := sql.Open("sqlite", "../asmr.db")
 	_ = db
