@@ -40,7 +40,8 @@ var Client = sync.Pool{
 			Transport: &http.Transport{
 				Proxy: http.ProxyFromEnvironment,
 				TLSClientConfig: &tls.Config{
-					MaxVersion: tls.VersionTLS12, // Cloudflare 会杀
+					//update tls version,version 12 may cause error on cf worker
+					MaxVersion: tls.VersionTLS13,
 				},
 			},
 		}
@@ -381,4 +382,25 @@ func CopyFile(src, dst string) (err error) {
 		return err
 	}
 	return err
+}
+
+func FastFetch(url string, wg *sync.WaitGroup, ch chan<- string) {
+	defer wg.Done()
+
+	startTime := time.Now()
+	resp, err := http.Get(url)
+	if err != nil {
+		fmt.Printf("Error fetching %s: %v\n", url, err)
+		return
+	}
+	defer resp.Body.Close()
+
+	_, err = io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Printf("Error reading response body from %s: %v\n", url, err)
+		return
+	}
+
+	duration := time.Since(startTime)
+	ch <- fmt.Sprintf("%s|%s", url, duration)
 }

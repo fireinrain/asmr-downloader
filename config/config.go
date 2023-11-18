@@ -6,7 +6,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
+	"strings"
+	"sync"
 
 	"go.uber.org/zap"
 
@@ -19,27 +22,149 @@ const MetaDataDb = "asmr.db"
 
 // AsmroneStartPageUrl https://api.asmr.one/api/works?order=create_date&sort=desc&page=1&seed=92&subtitle=0
 // const AsmrOneStartPageUrl = "https://api.asmr.one"
-const Asmr100StartPageUrl = "https://api.asmr-100.com"
-const Asmr200StartPageUrl = "https://api.asmr-200.com"
+//const Asmr100StartPageUrl = "https://api.asmr-100.com"
+//const Asmr200StartPageUrl = "https://api.asmr-200.com"
 
 var AsmrBaseApiUrl = ""
 
 func init() {
 	//访问asmr.one
+	url := GetRespFastestSiteUrl()
+	AsmrBaseApiUrl = url
+}
+
+// GetAsmrLatestUrls
+//
+//	@Description: 获取asmr.one最新域名列表
+//	@return []string
+//	@return error
+func GetAsmrLatestUrls() ([]string, error) {
+	//访问asmr.one 最新域名发布页
+	// official : https://as.mr
+	// cf worker proxy: https://as.131433.xyz
+	var officialPublishSite = "https://as.mr"
+	var cfProxyPublishSite = "https://as.131433.xyz"
+	var latestPublishSite = ""
 	client := utils.Client.Get().(*http.Client)
-	req, _ := http.NewRequest("GET", "https://asmr.one", nil)
+	req, _ := http.NewRequest("GET", officialPublishSite, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36")
 	resp, err := client.Do(req)
 	if err != nil || resp.StatusCode != 200 {
-		log.AsmrLog.Error("尝试访问asmr.one失败: ", zap.String("error", err.Error()))
-		log.AsmrLog.Info("当前使用asmr-200.com访问")
-		AsmrBaseApiUrl = Asmr200StartPageUrl
+		log.AsmrLog.Info("尝试访问asmr.one最新站点发布页as.mr失败: ", zap.String("error", err.Error()))
+		log.AsmrLog.Info("当前使用as.131433.xyz代理访问最新站点发布页")
+		latestPublishSite = cfProxyPublishSite
 	} else {
-		log.AsmrLog.Info("当前使用asmr-100.com访问...")
-		AsmrBaseApiUrl = Asmr100StartPageUrl
+		log.AsmrLog.Info("当前使用as.mr访问最新站点发布页...")
+		latestPublishSite = officialPublishSite
 	}
 	utils.Client.Put(client)
 	defer resp.Body.Close()
+
+	client = utils.Client.Get().(*http.Client)
+	req, _ = http.NewRequest("GET", latestPublishSite, nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36")
+	resp, err = client.Do(req)
+	if err != nil || resp.StatusCode != 200 {
+		log.AsmrLog.Error("访问asmr.one最新域名发布页出现错误: ", zap.String("error", err.Error()))
+		return nil, err
+	}
+	utils.Client.Put(client)
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.AsmrLog.Error("Error reading response body:", zap.String("error", err.Error()))
+		return nil, err
+	}
+
+	// Convert the response body to a string and print it
+	bodyText := string(body)
+	//fmt.Println("Response Text:", bodyText)
+
+	pattern := `<script type="module" crossorigin src="(/assets/index\.[a-f0-9]+\.js)"></script>`
+	re := regexp.MustCompile(pattern)
+	match := re.FindStringSubmatch(bodyText)
+
+	var jsFilePath = ""
+	if len(match) > 1 {
+		jsFilePath = match[1]
+		//fmt.Println("JavaScript file path:", jsFilePath)
+	} else {
+		//fmt.Println("JavaScript file path not found.")
+	}
+
+	jsContentUrl := latestPublishSite + jsFilePath
+	client = utils.Client.Get().(*http.Client)
+	req, _ = http.NewRequest("GET", jsContentUrl, nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36")
+	resp, err = client.Do(req)
+	if err != nil || resp.StatusCode != 200 {
+		log.AsmrLog.Error("访问asmr.one最新域名发布页js resource出现错误: ", zap.String("error", err.Error()))
+		return nil, err
+	}
+	utils.Client.Put(client)
+	defer resp.Body.Close()
+	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		//fmt.Println("Error reading response body:", err)
+		return nil, err
+	}
+	jsText := string(body)
+	//fmt.Println("Response Text:", jsText)
+
+	//extract rapid resp site url from js file text
+	sitePattern := `link:\s*"([^"]+)"`
+	re = regexp.MustCompile(sitePattern)
+	matches := re.FindAllStringSubmatch(jsText, -1)
+	var result []string
+	for _, match := range matches {
+		if len(match) > 1 {
+			link := match[1]
+			if strings.HasPrefix(link, "https://") {
+				result = append(result, link)
+			}
+			//fmt.Println("Link:", link)
+		}
+	}
+	return result, nil
+}
+
+func GetRespFastestSiteUrl() string {
+	latestUrls, err := GetAsmrLatestUrls()
+	if err != nil {
+		log.AsmrLog.Error("获取最新域名列表失败: ", zap.String("error", err.Error()))
+		//as the default
+		return "https://api.asmr.one"
+	}
+	var wg sync.WaitGroup
+	ch := make(chan string, len(latestUrls))
+
+	for _, url := range latestUrls {
+		wg.Add(1)
+		go utils.FastFetch(url, &wg, ch)
+	}
+
+	// Use a goroutine to wait for all fetches to complete and close the channel
+	go func() {
+		wg.Wait()
+		close(ch)
+	}()
+
+	// Wait for the fastest response
+	var fastestResponse string
+	for response := range ch {
+		if fastestResponse == "" || len(response) < len(fastestResponse) {
+			fastestResponse = response
+		}
+		log.AsmrLog.Info("Checking Fast Response:", zap.String("response", response))
+	}
+
+	log.AsmrLog.Info("Fastest Response is:", zap.String("response", fastestResponse))
+	fastUrls := strings.Split(fastestResponse, "|")
+	url := fastUrls[0]
+	url = strings.Trim(url, "/")
+	// convert to api
+	apiUrl := strings.Replace(url, "https://", "https://api.", 1)
+	return apiUrl
 }
 
 // Config
