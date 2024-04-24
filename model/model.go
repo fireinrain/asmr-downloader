@@ -65,6 +65,9 @@ type Works struct {
 	Release           string            `json:"release"`
 	DlCount           int               `json:"dl_count"`
 	Price             int               `json:"price"`
+	SourceType        string            `json:"source_type"`
+	SourceID          string            `json:"source_id"`
+	SourceURL         string            `json:"source_url"`
 	ReviewCount       int               `json:"review_count"`
 	RateCount         int               `json:"rate_count"`
 	RateAverage2Dp    float64           `json:"rate_average_2dp"`

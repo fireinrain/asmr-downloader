@@ -171,10 +171,10 @@ func DownloadItemHandler(asmrClient *spider.ASMRClient) {
 			batchCounter = 0
 		}
 
-		var id string
+		var rjid string
 		var subtitleFlag int
 
-		err := storage.StoreDb.Db.QueryRow("select item_prod_id,subtitle_flag from asmr_download where download_flag =0").Scan(&id, &subtitleFlag)
+		err := storage.StoreDb.Db.QueryRow("select rjid,subtitle_flag from asmr_download where download_flag =0").Scan(&rjid, &subtitleFlag)
 		if err != nil {
 			if err == sql.ErrNoRows {
 				//没有数据了
@@ -182,10 +182,11 @@ func DownloadItemHandler(asmrClient *spider.ASMRClient) {
 			}
 			log.AsmrLog.Fatal("查询数据库失败: ", zap.String("error", err.Error()))
 		}
+		fetchTracksId := strings.Replace(rjid, "RJ", "", 1)
 
-		asmrClient.DownloadItem(id, subtitleFlag)
+		asmrClient.DownloadItem(fetchTracksId, subtitleFlag)
 		//更新ASMR数据下载状态
-		UpdateItemDownStatus(id, subtitleFlag)
+		UpdateItemDownStatus(rjid, subtitleFlag)
 		batchCounter += 1
 	}
 }
@@ -195,12 +196,12 @@ func DownloadItemHandler(asmrClient *spider.ASMRClient) {
 //	@Description: 下载完音频数据更新下载状态
 //	@param itemProdId
 //	@param subtitleFlag
-func UpdateItemDownStatus(itemProdId string, subtitleFlag int) {
+func UpdateItemDownStatus(rjid string, subtitleFlag int) {
 	tx, err := storage.StoreDb.Db.Begin()
 	if err != nil {
 		log.AsmrLog.Fatal("开启事务失败: ", zap.String("fatal", err.Error()))
 	}
-	_, err = tx.Exec("update asmr_download set download_flag = 1 where item_prod_id = ? and subtitle_flag = ?", itemProdId, subtitleFlag)
+	_, err = tx.Exec("update asmr_download set download_flag = 1 where rjid = ? and subtitle_flag = ?", rjid, subtitleFlag)
 	if err != nil {
 		tx.Rollback()
 		log.AsmrLog.Info("数据下载完成状态更新失败: ", zap.String("info", err.Error()))
@@ -217,7 +218,7 @@ func UpdateItemDownStatus(itemProdId string, subtitleFlag int) {
 	if subtitleFlag == 1 {
 		message = "含字幕"
 	}
-	log.AsmrLog.Info(fmt.Sprintf("%s数据: RJ%s 下载完成...", message, itemProdId))
+	log.AsmrLog.Info(fmt.Sprintf("%s数据: %s 下载完成...", message, rjid))
 
 }
 
@@ -523,17 +524,17 @@ func ProcessCollectPageData() {
 func StoreTodb(data model.PageResult) {
 	//查找数据库中是否存在 不存在插入 存在跳过
 	for _, row := range data.Works {
-		id := row.ID
+		source_id := row.SourceID
 		subtitle := row.HasSubtitle
 		err := storage.StoreDb.Db.QueryRow(
-			"select item_prod_id,subtitle_flag from asmr_download where item_prod_id = ? and subtitle_flag = ?", id, subtitle).Scan(&id, &subtitle)
+			"select rjid,subtitle_flag from asmr_download where rjid = ? and subtitle_flag = ?", source_id, subtitle).Scan(&source_id, &subtitle)
 		if err == sql.ErrNoRows {
 			//插入数据
 			tx, err := storage.StoreDb.Db.Begin()
 			if err != nil {
 				log.AsmrLog.Fatal("开启事务失败: ", zap.String("fatal", err.Error()))
 			}
-			rjid := fmt.Sprintf("RJ%d", row.ID)
+			rjid := fmt.Sprintf("%d", row.SourceID)
 			title := strings.TrimSpace(row.Title)
 			subtitleFlag := row.HasSubtitle
 
