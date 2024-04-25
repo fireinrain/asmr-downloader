@@ -534,7 +534,7 @@ func StoreTodb(data model.PageResult) {
 			if err != nil {
 				log.AsmrLog.Fatal("开启事务失败: ", zap.String("fatal", err.Error()))
 			}
-			rjid := fmt.Sprintf("%d", row.SourceID)
+			rjid := fmt.Sprintf("%s", row.SourceID)
 			title := strings.TrimSpace(row.Title)
 			subtitleFlag := row.HasSubtitle
 
