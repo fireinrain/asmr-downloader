@@ -1,335 +1,578 @@
-package config
+package main
 
 import (
-	"encoding/json"
-	"io"
-	"net/http"
+	"database/sql"
+	"fmt"
 	"os"
-	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"go.uber.org/zap"
 
+	"asmr-downloader/config"
 	"asmr-downloader/log"
+	"asmr-downloader/model"
+	"asmr-downloader/spider"
+	"asmr-downloader/storage"
 	"asmr-downloader/utils"
 )
 
-const ConfigFileName = "config.json"
-const MetaDataDb = "asmr.db"
+var pageDataChannel = make(chan model.PageResult, 4)
+var subTitlePageDataChannel = make(chan model.PageResult, 4)
+var collectPageDataChannel = make(chan model.PageResult, 8)
 
-// AsmroneStartPageUrl https://api.asmr.one/api/works?order=create_date&sort=desc&page=1&seed=92&subtitle=0
-// const AsmrOneStartPageUrl = "https://api.asmr.one"
-//const Asmr100StartPageUrl = "https://api.asmr-100.com"
-//const Asmr200StartPageUrl = "https://api.asmr-200.com"
+func main() {
+	//释放日志资源文件
+	defer log.LogFile.Close()
+	defer log.AsmrLog.Sync()
+	//获取程序传入的参数
+	//简易下载模式
+	if len(os.Args) >= 2 && os.Args[1] != "" {
+		builder := strings.Builder{}
+		container := []string{}
 
-var AsmrBaseApiUrl = ""
-
-func init() {
-	//访问asmr.one
-	url := GetRespFastestSiteUrl()
-	AsmrBaseApiUrl = url
-}
-
-// GetAsmrLatestUrls
-//
-//	@Description: 获取asmr.one最新域名列表
-//	@return []string
-//	@return error
-func GetAsmrLatestUrls() ([]string, error) {
-	//访问asmr.one 最新域名发布页
-	// official : https://as.mr
-	// cf worker proxy: https://as.131433.xyz
-	var officialPublishSite = "https://as.mr"
-	var cfProxyPublishSite = "https://as.131433.xyz"
-	var latestPublishSite = ""
-	client := utils.Client.Get().(*http.Client)
-	req, _ := http.NewRequest("GET", officialPublishSite, nil)
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36")
-	resp, err := client.Do(req)
-	if err != nil || resp.StatusCode != 200 {
-		log.AsmrLog.Info("尝试访问asmr.one最新站点发布页as.mr失败: ", zap.String("error", err.Error()))
-		log.AsmrLog.Info("当前使用as.131433.xyz代理访问最新站点发布页")
-		latestPublishSite = cfProxyPublishSite
-	} else {
-		log.AsmrLog.Info("当前使用as.mr访问最新站点发布页...")
-		latestPublishSite = officialPublishSite
-	}
-	utils.Client.Put(client)
-	defer resp.Body.Close()
-
-	client = utils.Client.Get().(*http.Client)
-	req, _ = http.NewRequest("GET", latestPublishSite, nil)
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36")
-	resp, err = client.Do(req)
-	if err != nil || resp.StatusCode != 200 {
-		log.AsmrLog.Error("访问asmr.one最新域名发布页出现错误: ", zap.String("error", err.Error()))
-		return nil, err
-	}
-	utils.Client.Put(client)
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.AsmrLog.Error("Error reading response body:", zap.String("error", err.Error()))
-		return nil, err
-	}
-
-	// Convert the response body to a string and print it
-	bodyText := string(body)
-	//fmt.Println("Response Text:", bodyText)
-
-	pattern := `<script type="module" crossorigin src="(/assets/index\.[a-f0-9]+\.js)"></script>`
-	re := regexp.MustCompile(pattern)
-	match := re.FindStringSubmatch(bodyText)
-
-	var jsFilePath = ""
-	if len(match) > 1 {
-		jsFilePath = match[1]
-		//fmt.Println("JavaScript file path:", jsFilePath)
-	} else {
-		//fmt.Println("JavaScript file path not found.")
-	}
-
-	jsContentUrl := latestPublishSite + jsFilePath
-	client = utils.Client.Get().(*http.Client)
-	req, _ = http.NewRequest("GET", jsContentUrl, nil)
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36")
-	resp, err = client.Do(req)
-	if err != nil || resp.StatusCode != 200 {
-		log.AsmrLog.Error("访问asmr.one最新域名发布页js resource出现错误: ", zap.String("error", err.Error()))
-		return nil, err
-	}
-	utils.Client.Put(client)
-	defer resp.Body.Close()
-	body, err = io.ReadAll(resp.Body)
-	if err != nil {
-		//fmt.Println("Error reading response body:", err)
-		return nil, err
-	}
-	jsText := string(body)
-	//fmt.Println("Response Text:", jsText)
-
-	//extract rapid resp site url from js file text
-	sitePattern := `link:\s*"([^"]+)"`
-	re = regexp.MustCompile(sitePattern)
-	matches := re.FindAllStringSubmatch(jsText, -1)
-	var result []string
-	for _, match := range matches {
-		if len(match) > 1 {
-			link := match[1]
-			if strings.HasPrefix(link, "https://") {
-				result = append(result, link)
+		for k, v := range os.Args {
+			if k == 0 {
+				continue
 			}
-			//fmt.Println("Link:", link)
+			cleanValue := strings.TrimSpace(v)
+			if !strings.HasPrefix(cleanValue, "RJ") {
+				log.AsmrLog.Fatal("参数格式有误,请重新输入参数并运行")
+			}
+			container = append(container, cleanValue)
+			builder.WriteString(cleanValue + " ")
 		}
+		log.AsmrLog.Info("正在查询：", zap.String("info", builder.String()))
+		SimpleModeDownload(container)
+		return
 	}
-	return result, nil
-}
 
-func GetRespFastestSiteUrl() string {
-	latestUrls, err := GetAsmrLatestUrls()
+	log.AsmrLog.Info("------ASMR.ONE Downloader------")
+	log.AsmrLog.Info("---------Power by Euler--------")
+	log.AsmrLog.Info("---------version20230207--------")
+	var globalConfig *config.Config
+	//判断是否初次运行
+	globalConfig = CheckIfFirstStart(config.ConfigFileName)
+	_ = storage.GetDbInstance()
+	log.AsmrLog.Info("", zap.String("info", fmt.Sprintf("GlobalConfig=%s", globalConfig.SafePrintInfoStr())))
+	asmrClient := spider.NewASMRClient(globalConfig.MaxWorker, globalConfig)
+	err := asmrClient.Login()
 	if err != nil {
-		log.AsmrLog.Error("获取最新域名列表失败: ", zap.String("error", err.Error()))
-		//as the default
-		return "https://api.asmr.one"
+		log.AsmrLog.Error("登录失败:", zap.String("error", err.Error()))
+		return
 	}
-	var wg sync.WaitGroup
-	ch := make(chan string, len(latestUrls))
-
-	for _, url := range latestUrls {
-		wg.Add(1)
-		go utils.FastFetch(url, &wg, ch)
+	log.AsmrLog.Info("账号登录成功!")
+	var authStr = asmrClient.Authorization
+	//检查数据更新
+	ifNeedUpdateMetadata, err := CheckIfNeedUpdateMetadata(authStr)
+	if err != nil {
+		log.AsmrLog.Error("元数据检查更新失败: ", zap.String("error", err.Error()))
 	}
+	// Get the current time
+	now := time.Now()
 
-	// Use a goroutine to wait for all fetches to complete and close the channel
-	go func() {
-		wg.Wait()
-		close(ch)
-	}()
+	// Format the time using the standard format string
+	currentTimeStr := now.Format("2006-01-02 15:04:05")
 
-	// Wait for the fastest response
-	var fastestResponse string
-	for response := range ch {
-		if fastestResponse == "" || len(response) < len(fastestResponse) {
-			fastestResponse = response
+	if ifNeedUpdateMetadata {
+		log.AsmrLog.Info(fmt.Sprintf("当前时间: %s,网站有新作品更新,正在进行更新...", currentTimeStr))
+		FetchAllMetaData(authStr, asmrClient)
+	} else {
+		log.AsmrLog.Info(fmt.Sprintf("当前时间: %s,网站暂时无新作品...", currentTimeStr))
+	}
+	//获取首页
+	//先获取有字幕数据
+	//FetchMetaDataWithSub(authStr, asmrClient, globalConfig)
+	//FetchAllMetaData(authStr, asmrClient)
+
+	//检查是否需要进行下载作品MPS
+	needUpdateDownload := CheckIfNeedUpdateDownload()
+	if needUpdateDownload {
+		input := utils.PromotForInput("ASMR作品本地与网站不同步.是否需要同步下载(Y/N,默认为Y)?:", "Y")
+		if input == "Y" {
+			//TODO do download task
+			//检测破碎文件并下载
+			fixBrokenDownloadFile := utils.CheckIfNeedFixBrokenDownloadFile()
+			if fixBrokenDownloadFile {
+				log.AsmrLog.Info("发现上一次运行存在下载失败的媒体文件，正在进行修复下载...")
+				utils.FixBrokenDownloadFile(asmrClient.GlobalConfig.MaxFailedRetry)
+				log.AsmrLog.Info("修复下载完成...")
+			}
+			log.AsmrLog.Info("正在下载ASMR作品文件,请稍后...")
+			DownloadItemHandler(asmrClient)
+			log.AsmrLog.Info("当前下载任务已完成...")
+		} else {
+			log.AsmrLog.Info("你已取消下载,程序即将退出.")
 		}
-		log.AsmrLog.Info("Checking Fast Response:", zap.String("response", response))
-	}
 
-	log.AsmrLog.Info("Fastest Response is:", zap.String("response", fastestResponse))
-	fastUrls := strings.Split(fastestResponse, "|")
-	url := fastUrls[0]
-	url = strings.Trim(url, "/")
-	// convert to api
-	apiUrl := strings.Replace(url, "https://", "https://api.", 1)
-	return apiUrl
+	} else {
+		log.AsmrLog.Info("ASMR作品本地与网站完全同步.当前无需下载")
+	}
+	//close db con
+	_ = storage.StoreDb.Db.Close()
 }
 
-// Config
-//
-//	Config
-//	@Description: 配置结构体
-type Config struct {
-	Account   string `json:"account"`
-	Password  string `json:"password"`
-	MaxWorker int    `json:"max_worker"`
-	//批量下载次数
-	BatchTaskCount int `json:"batch_task_count"`
-	//批量下载完后休息多少秒(防止服务器ban你)
-	BatchSleepTime int `json:"batch_sleep_time"`
-	//是否自动执行 下一个批次
-	AutoForNextBatch bool `json:"auto_for_next_batch"`
-	//下载目录
-	DownloadDir string `json:"download_dir"`
-	//元数据库
-	MetaDataDb string `json:"meta_data_db"`
-	//最大重试次数
-	MaxFailedRetry int `json:"max_failed_retry"`
-	//是否跳过MP3文件
-	PrioritizeMP3 bool `json:"skip_mp3_file"`
-}
-
-// SafePrintInfoStr
-//
-//	@Description: 格式配置信息
-//	@receiver receiver
-//	@return string
-func (receiver *Config) SafePrintInfoStr() string {
-	config := Config{
-		Account:          receiver.Account,
-		Password:         utils.MosaicStr(receiver.Password, "*"),
-		MaxWorker:        receiver.MaxWorker,
-		BatchTaskCount:   receiver.BatchTaskCount,
-		BatchSleepTime:   receiver.BatchSleepTime,
-		AutoForNextBatch: receiver.AutoForNextBatch,
-		DownloadDir:      receiver.DownloadDir,
-		MetaDataDb:       receiver.MetaDataDb,
-		MaxFailedRetry:   receiver.MaxFailedRetry,
-	}
-	marshal, err := json.Marshal(config)
-	if err != nil {
-		log.AsmrLog.Error("序列化配置出错: ", zap.String("error", err.Error()))
-	}
-	return string(marshal)
-}
-
-// generateDefaultConfig
-//
-//	@Description: 生成默认配置
-func generateDefaultConfig() {
-	var customConfig = Config{
-		Account:          "guest",
+func SimpleModeDownload(idList []string) {
+	c := &config.Config{
+		Account:          "guset",
 		Password:         "guest",
 		MaxWorker:        6,
 		BatchTaskCount:   1,
-		BatchSleepTime:   2,
+		BatchSleepTime:   1,
 		AutoForNextBatch: false,
-		DownloadDir:      "data",
-		MetaDataDb:       "asmr.db",
-		MaxFailedRetry:   3,
+		DownloadDir:      "./",
+		MetaDataDb:       "",
 		PrioritizeMP3:      true,
 	}
-
-	//提示用户输入用户名
-	account := utils.PromotForInput("请输入您的账号(默认为guest): ", customConfig.Account)
-	customConfig.Account = account
-	password := utils.PromotForInput("请输入您的密码(默认为guest): ", customConfig.Password)
-	customConfig.Password = password
-	maxWorker := utils.PromotForInput("请输入并发下载数(默认为6): ", strconv.Itoa(customConfig.MaxWorker))
-	maxWorkerInt, err := strconv.Atoi(maxWorker)
+	asmrClient := spider.NewASMRClient(6, c)
+	err := asmrClient.Login()
 	if err != nil {
-		log.AsmrLog.Error("格式输入错误: ", zap.String("error", err.Error()))
+		log.AsmrLog.Error("登录失败: ", zap.String("error", err.Error()))
+		return
 	}
-	customConfig.MaxWorker = maxWorkerInt
-	//最大失败文件下载次数
-	maxFailedRetry := utils.PromotForInput("请输入文件下载失败时最大重试次数(默认为3): ", strconv.Itoa(customConfig.MaxFailedRetry))
-	maxFailedRetryInt, err2 := strconv.Atoi(maxFailedRetry)
-	if err2 != nil {
-		log.AsmrLog.Error("格式输入错误: ", zap.String("error", err2.Error()))
+	log.AsmrLog.Info("访客账号登录成功!")
+	pool := asmrClient.WorkerPool
+	for i := range idList {
+		value := idList[i]
+		pool.Do(func() error {
+			asmrClient.SimpleDownloadItem(value)
+			return nil
+		})
 	}
-	customConfig.MaxFailedRetry = maxFailedRetryInt
+	_ = pool.Wait()
+	log.AsmrLog.Info("所有任务下载完成,程序即将退出 ")
 
-	batchTaskCount := utils.PromotForInput("请输出批量下载作品数量(默认为1): ", strconv.Itoa(customConfig.BatchTaskCount))
-	i, err := strconv.Atoi(batchTaskCount)
-	if err != nil {
-		log.AsmrLog.Error("格式输入错误: ", zap.String("error", err.Error()))
-	}
-	customConfig.BatchTaskCount = i
-
-	batchSleepTime := utils.PromotForInput("请输出批量下载间隔，单位为秒(默认为1): ", strconv.Itoa(customConfig.BatchSleepTime))
-	ii, err := strconv.Atoi(batchSleepTime)
-	if err != nil {
-		log.AsmrLog.Error("格式输入错误: ", zap.String("error", err.Error()))
-	}
-	customConfig.BatchSleepTime = ii
-
-	autoForNextBatch := utils.PromotForInput("是否自动执行下一批次下载(Y/N)(默认为N): ", "N")
-	if autoForNextBatch == "Y" {
-		customConfig.AutoForNextBatch = true
-	} else {
-		customConfig.AutoForNextBatch = false
-	}
-	dowwnloadDir := utils.PromotForInput("请输入数据下载目录(默认为data): ", customConfig.DownloadDir)
-	exists := utils.FileOrDirExists(dowwnloadDir)
-	if !exists {
-		log.AsmrLog.Info("设置的下载目录不存在,尝试自动生成: " + dowwnloadDir)
-		subtitleDir := filepath.Join(dowwnloadDir, "subtitle")
-		nosubtitleDir := filepath.Join(dowwnloadDir, "nosubtitle")
-
-		err := os.MkdirAll(subtitleDir, os.ModePerm)
-		if err != nil {
-			log.AsmrLog.Error("自动创建下载目录失败: " + subtitleDir)
-		}
-		err = os.MkdirAll(nosubtitleDir, os.ModePerm)
-		if err != nil {
-			log.AsmrLog.Error("自动创建下载目录失败: " + subtitleDir)
-		}
-	}
-	customConfig.DownloadDir = dowwnloadDir
-
-	PrioritizeMP3 := utils.PromotForInput("是否只下载MP3文件(Y/N)(默认为Y): ", "Y")
-	if PrioritizeMP3 == "N" {
-		customConfig.PrioritizeMP3 = false
-	} else {
-		customConfig.PrioritizeMP3 = true
-	}
-
-	config, err := json.Marshal(customConfig)
-	if err != nil {
-		log.AsmrLog.Error("序列化配置出错: ", zap.String("error", err.Error()))
-		os.Exit(0)
-	}
-	_ = os.WriteFile("config.json", config, 0644)
-	log.AsmrLog.Info("已生成配置文件config.json, 如果您之前不做任何输入，默认以访客模式访问。")
-	//os.Exit(0)
 }
 
-// GetConfig
+// DownloadItemHandler
 //
-//	@Description: 获取配置
-//	@return *Config
-func GetConfig() *Config {
-	if _, err := os.Stat("config.json"); os.IsNotExist(err) {
-		generateDefaultConfig()
+//	@Description: ASMR作品下载
+//	@param asmrClient
+func DownloadItemHandler(asmrClient *spider.ASMRClient) {
+	batchCounter := 0
+	//批量下载大小 默认为1, -1表示一次性全部下载
+	var batchTaskCount = asmrClient.GlobalConfig.BatchTaskCount
+	//批量下载完后休息多少秒(防止服务器ban你)
+	var batchSleepTime = asmrClient.GlobalConfig.BatchSleepTime
+	//是否自动执行 下一个批次
+	var autoForNextBatch = asmrClient.GlobalConfig.AutoForNextBatch
+	// 失败作品重试次数
+	var maxRetry = asmrClient.GlobalConfig.MaxFailedRetry
+	for {
+		if batchCounter == batchTaskCount {
+			log.AsmrLog.Info("--------------------为下一批次下载休眠--------------------")
+			time.Sleep(time.Duration(batchSleepTime) * time.Second)
+			if !autoForNextBatch {
+				//处理下载失败的链接
+				utils.FixBrokenDownloadFile(maxRetry)
+				_ = utils.PromotForInput("手动确认下一批次任务,按回车键继续进行任务: ", "")
+			}
+			//重置batchCounter
+			batchCounter = 0
+		}
+
+		var rjid string
+		var subtitleFlag int
+
+		err := storage.StoreDb.Db.QueryRow("select rjid,subtitle_flag from asmr_download where download_flag =0").Scan(&rjid, &subtitleFlag)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				//没有数据了
+				break
+			}
+			log.AsmrLog.Fatal("查询数据库失败: ", zap.String("error", err.Error()))
+		}
+		fetchTracksId := strings.Replace(rjid, "RJ", "", 1)
+
+		asmrClient.DownloadItem(fetchTracksId, subtitleFlag)
+		//更新ASMR数据下载状态
+		UpdateItemDownStatus(rjid, subtitleFlag)
+		batchCounter += 1
 	}
-	file, err := os.Open("config.json")
+}
+
+// UpdateItemDownStatus
+//
+//	@Description: 下载完音频数据更新下载状态
+//	@param itemProdId
+//	@param subtitleFlag
+func UpdateItemDownStatus(rjid string, subtitleFlag int) {
+	tx, err := storage.StoreDb.Db.Begin()
 	if err != nil {
-		log.AsmrLog.Error("打开配置文件失败: ", zap.String("error", err.Error()))
-		os.Exit(0)
+		log.AsmrLog.Fatal("开启事务失败: ", zap.String("fatal", err.Error()))
 	}
-	defer func() { _ = file.Close() }()
-	all, err := io.ReadAll(file)
+	_, err = tx.Exec("update asmr_download set download_flag = 1 where rjid = ? and subtitle_flag = ?", rjid, subtitleFlag)
 	if err != nil {
-		log.AsmrLog.Error("读取配置文件失败: ", zap.String("error", err.Error()))
-		os.Exit(0)
+		tx.Rollback()
+		log.AsmrLog.Info("数据下载完成状态更新失败: ", zap.String("info", err.Error()))
+		log.AsmrLog.Info("正在进行数据回滚...")
 	}
-	var config Config
-	err = json.Unmarshal(all, &config)
+	err = tx.Commit()
 	if err != nil {
-		log.AsmrLog.Error("解析配置文件失败: ", zap.String("error", err.Error()))
-		os.Exit(0)
+		log.AsmrLog.Error("数据提交失败：", zap.String("error", err.Error()))
 	}
-	return &config
+	var message = ""
+	if subtitleFlag == 0 {
+		message = "无字幕"
+	}
+	if subtitleFlag == 1 {
+		message = "含字幕"
+	}
+	log.AsmrLog.Info(fmt.Sprintf("%s数据: %s 下载完成...", message, rjid))
+
+}
+
+// CheckIfNeedUpdateDownload
+//
+//	@Description: 检查是否需要下载ASMR
+//
+// 当数据库中asmr_download的所有数据 download_flag 为1
+// 则不需要下载否则需要下载
+func CheckIfNeedUpdateDownload() bool {
+	var metaDataStatics model.MetaDataStatics
+	err := storage.StoreDb.Db.QueryRow("select a.total,\n       b.sub_total,\n       (a.total - b.sub_total)        "+
+		"             as no_sub_total,\n       c.down_sub_total,\n       d.down_no_sub_total,\n       (b.sub_total - c.down_sub_total)      "+
+		"      as undown_sub_total,\n       (a.total - b.sub_total - down_no_sub_total) as undown_no_sub_total,\n      "+
+		" (c.down_sub_total+d.down_no_sub_total) as have_down_total,\n      "+
+		" (a.total - (c.down_sub_total+d.down_no_sub_total)) as undown_total\nfrom (select count(*) as total from asmr_download) as a,\n  "+
+		"   (select count(*) as sub_total from asmr_download where subtitle_flag = 1) as b,\n     (select count(*) as down_sub_total from asmr_download where subtitle_flag = 1 and download_flag = 1) as c,\n    "+
+		" (select count(*) as down_no_sub_total from asmr_download where subtitle_flag = 0 and download_flag = 1) as d").Scan(
+		&metaDataStatics.TotalCount,
+		&metaDataStatics.SubTitleCount,
+		&metaDataStatics.NoSubTitleCount,
+		&metaDataStatics.SubTitleDownloaded,
+		&metaDataStatics.NoSubTitleDownloaded,
+		&metaDataStatics.SubTitleUnDownloaded,
+		&metaDataStatics.NoSubTitleUnDownloaded,
+		&metaDataStatics.HavenDownTotal,
+		&metaDataStatics.UnDownTotal)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			//没有数据 ignore here
+			return true
+		}
+		log.AsmrLog.Fatal("查询统计信息出错: ", zap.String("fatal", err.Error()))
+	}
+	staticsInfo := metaDataStatics.GetStaticsInfo()
+	infoStr := staticsInfo.PrettyInfoStr()
+	log.AsmrLog.Info(infoStr)
+	if metaDataStatics.TotalCount > (metaDataStatics.SubTitleDownloaded + metaDataStatics.NoSubTitleDownloaded) {
+		return true
+	}
+	return false
+}
+
+// CheckIfNeedUpdateMetadata
+//
+//	@Description: 判断是否需要从网站跟下元数据
+//	@param authStr
+//	@return bool
+//	@return error
+func CheckIfNeedUpdateMetadata(authStr string) (bool, error) {
+	indexPageInfo, err := spider.GetAllIndexPageInfo(authStr)
+	if err != nil {
+		log.AsmrLog.Error(fmt.Sprintf("ASMR one 首页数据获取失败: %s", err.Error()))
+	}
+	//查询数据
+	var total int
+	err = storage.StoreDb.Db.QueryRow("select count(*) as total from asmr_download").Scan(&total)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			//没有数据
+			total = 0
+		} else {
+			log.AsmrLog.Fatal("查询总数据条数出错: ", zap.String("fatal", err.Error()))
+
+		}
+	}
+	if indexPageInfo.Pagination.TotalCount > total {
+		return true, nil
+	}
+	return false, nil
+}
+
+// FetchAllMetaData
+//
+//	@Description: 提取所有元数据
+//	@param authStr
+//	@param asmrClient
+func FetchAllMetaData(authStr string, asmrClient *spider.ASMRClient) {
+	pageSg := &sync.WaitGroup{}
+	pageSg.Add(2)
+	go MetaDataAllTaskHandler(authStr, asmrClient, pageSg)
+	time.Sleep(5 * time.Duration(time.Second))
+	go ProcessAllCollectPageData(pageSg)
+	pageSg.Wait()
+}
+
+// FetchMetaDataWithSub
+//
+//	@Description: 按照查询是否带字幕标签运行获取数据程序
+//	@param authStr
+//	@param asmrClient
+//	@param globalConfig
+func FetchMetaDataWithSub(authStr string, asmrClient *spider.ASMRClient, globalConfig *config.Config) {
+	pageSg := &sync.WaitGroup{}
+	pageSg.Add(2)
+	go MetaDataTaskHandler(authStr, 1, asmrClient, pageSg)
+	//无字幕数据
+	asmrClient2 := spider.NewASMRClient(globalConfig.MaxWorker, globalConfig)
+	go MetaDataTaskHandler(authStr, 0, asmrClient2, pageSg)
+	pageSg.Wait()
+	time.Sleep(5 * time.Duration(time.Second))
+	ProcessCollectPageData()
+}
+
+// MetaDataAllTaskHandler
+//
+//	@Description: 下载所有元数据
+//	@param authStr
+//	@param asmrClient
+//	@param wg
+func MetaDataAllTaskHandler(authStr string, asmrClient *spider.ASMRClient, wg *sync.WaitGroup) {
+	defer wg.Done()
+	indexPageInfo, err := spider.GetAllIndexPageInfo(authStr)
+	if err != nil {
+		log.AsmrLog.Error(fmt.Sprintf("ASMR one 首页数据获取失败: %s", err.Error()))
+	}
+	log.AsmrLog.Info("正在获取作品元数据...")
+	//计算最大页数
+	var totalCount = indexPageInfo.Pagination.TotalCount
+	var pageSize = indexPageInfo.Pagination.PageSize
+	maxPage := utils.CalculateMaxPage(totalCount, pageSize)
+	//maxPage = 2
+	pool := asmrClient.WorkerPool
+	//接受数据
+	//并发10
+	//limiter := make(chan bool, 20)
+	fetchWg := &sync.WaitGroup{}
+	go func() {
+		fetchWg.Add(1)
+		defer fetchWg.Done()
+		for i := 1; i <= maxPage; i++ { //开启20个请求
+			pageIndex := i
+			pool.Do(func() error {
+				return PageAllDataTaskHandler(collectPageDataChannel, authStr, pageIndex)
+			})
+		}
+		_ = pool.Wait()
+		close(collectPageDataChannel)
+	}()
+	fetchWg.Wait()
+
+}
+
+// PageAllDataTaskHandler
+//
+//	@Description: 获取所有页面元数据
+//	@param collectPageDataChannel
+//	@param authStr
+//	@param pageIndex
+//	@return error
+func PageAllDataTaskHandler(collectPageDataChannel chan model.PageResult, authStr string, pageIndex int) error {
+	infoData, err2 := spider.GetPerPageInfo(authStr, pageIndex, -1)
+	if err2 != nil {
+		log.AsmrLog.Info(fmt.Sprintf("当前页: %d,访问失败", pageIndex))
+		//TODO 记录失败的index
+	}
+	fmt.Printf("获取到数据页: %d", pageIndex)
+	//发送给channel
+	collectPageDataChannel <- *infoData
+	//fmt.Printf("数据: %v", infoData)
+	return nil
+}
+
+// MetaDataTaskHandler
+//
+//	@Description: 按照有无字幕获取接口数据
+//	@param authStr
+//	@param subTitleFlag
+//	@param asmrClient
+//	@param wg
+func MetaDataTaskHandler(authStr string, subTitleFlag int, asmrClient *spider.ASMRClient, wg *sync.WaitGroup) {
+	defer wg.Done()
+	indexPageInfo, err := spider.GetIndexPageInfo(authStr, subTitleFlag)
+	var targetChannel chan model.PageResult
+	var message = ""
+	if subTitleFlag == 0 {
+		message = "无字幕"
+		targetChannel = pageDataChannel
+	}
+	if subTitleFlag == 1 {
+		message = "有字幕"
+		targetChannel = subTitlePageDataChannel
+	}
+	if err != nil {
+		log.AsmrLog.Error(fmt.Sprintf("ASMR one 首页(%s)获取失败: %s", message, err.Error()))
+	}
+	log.AsmrLog.Info(fmt.Sprintf("正在获取%s作品元数据...", message))
+	//计算最大页数
+	var totalCount = indexPageInfo.Pagination.TotalCount
+	var pageSize = indexPageInfo.Pagination.PageSize
+	maxPage := utils.CalculateMaxPage(totalCount, pageSize)
+	//maxPage = 2
+	pool := asmrClient.WorkerPool
+	//接受数据
+	//并发10
+	//limiter := make(chan bool, 20)
+	fetchWg := &sync.WaitGroup{}
+	go func() {
+		fetchWg.Add(1)
+		defer fetchWg.Done()
+		for i := 1; i <= maxPage; i++ { //开启20个请求
+			pageIndex := i
+			pool.Do(func() error {
+				return PageDataTaskHandler(targetChannel, authStr, pageIndex, subTitleFlag)
+			})
+		}
+		_ = pool.Wait()
+		close(targetChannel)
+	}()
+	fetchWg.Wait()
+
+}
+
+// PageDataTaskHandler
+//
+//	@Description: 页面元数据下载
+//	@param dataChannel
+//	@param authStr
+//	@param pageIndex
+//	@param subTitleFlag
+//	@return error
+func PageDataTaskHandler(dataChannel chan model.PageResult, authStr string, pageIndex int, subTitleFlag int) error {
+	infoData, err2 := spider.GetPerPageInfo(authStr, pageIndex, subTitleFlag)
+	if err2 != nil {
+		log.AsmrLog.Error(fmt.Sprintf("当前页: %d,访问失败", pageIndex))
+		//TODO 记录失败的index
+	}
+	var message = ""
+	if subTitleFlag == 0 {
+		message = "无字幕"
+	}
+	if subTitleFlag == 1 {
+		message = "有字幕"
+	}
+
+	log.AsmrLog.Info(fmt.Sprintf("获取到%s数据页: %d", message, pageIndex))
+	//发送给channel
+	dataChannel <- *infoData
+	//fmt.Printf("数据: %v", infoData)
+	return nil
+}
+
+// ProcessAllCollectPageData
+//
+//	@Description: 一个channel处理所有数据
+//	@param wg
+func ProcessAllCollectPageData(wg *sync.WaitGroup) {
+	defer wg.Done()
+	log.AsmrLog.Info("元数据处理中...")
+
+	index := 0
+	for rc := range collectPageDataChannel {
+		index += 1
+		//fmt.Printf("data: %v", rc)
+		StoreTodb(rc)
+	}
+	log.AsmrLog.Info(fmt.Sprintf("采集元数据结束,共采集%d页数据", index))
+
+}
+
+// ProcessCollectPageData
+//
+//	@Description: 分两个channel处理有/无字幕数据
+func ProcessCollectPageData() {
+	log.AsmrLog.Info("元数据处理中...")
+
+	indexSubtitle := 0
+	for rc := range subTitlePageDataChannel {
+		indexSubtitle += 1
+		//fmt.Printf("data: %v", rc)
+		StoreTodb(rc)
+	}
+	//fmt.Printf("采集结束,共采集%d页数据", indexSubtitle)
+	index := 0
+	for rc := range pageDataChannel {
+		index += 1
+		//fmt.Printf("data: %v", rc)
+		StoreTodb(rc)
+	}
+	total := indexSubtitle + index
+	log.AsmrLog.Info(fmt.Sprintf("采集元数据结束,共采集%d页数据", total))
+
+	//loop:
+	//	for {
+	//		select {
+	//		case value := <-pageDataChannel:
+	//			counter += 1
+	//			fmt.Printf("data: %v", value)
+	//		case value := <-subTitlePageDataChannel:
+	//			counter += 1
+	//			fmt.Printf("data: %v", value)
+	//		default:
+	//			break loop
+	//		}
+	//	}
+
+}
+
+// StoreTodb
+//
+//	@Description: 将下载的元数据存储到sqlite3
+//	@param data
+func StoreTodb(data model.PageResult) {
+	//查找数据库中是否存在 不存在插入 存在跳过
+	for _, row := range data.Works {
+		source_id := row.SourceID
+		subtitle := row.HasSubtitle
+		err := storage.StoreDb.Db.QueryRow(
+			"select rjid,subtitle_flag from asmr_download where rjid = ? and subtitle_flag = ?", source_id, subtitle).Scan(&source_id, &subtitle)
+		if err == sql.ErrNoRows {
+			//插入数据
+			tx, err := storage.StoreDb.Db.Begin()
+			if err != nil {
+				log.AsmrLog.Fatal("开启事务失败: ", zap.String("fatal", err.Error()))
+			}
+			rjid := fmt.Sprintf("%s", row.SourceID)
+			title := strings.TrimSpace(row.Title)
+			subtitleFlag := row.HasSubtitle
+
+			_, err = tx.Exec("insert into asmr_download(rjid,item_prod_id,title,subtitle_flag) values(?,?,?,?)", rjid, row.ID, title, subtitleFlag)
+			if err != nil {
+				tx.Rollback()
+				log.AsmrLog.Error("数据插入失败: ", zap.String("err", err.Error()))
+				log.AsmrLog.Info("正在进行数据回滚...")
+			}
+			err = tx.Commit()
+			if err != nil {
+				log.AsmrLog.Error("数据提交失败：", zap.String("err", err.Error()))
+			}
+			log.AsmrLog.Info("新增数据: " + rjid)
+
+		} else if err != nil {
+			log.AsmrLog.Fatal("查询数据库出现错误: ", zap.String("fatal", err.Error()))
+			return
+		} else {
+			//fmt.Printf("数据库已存在: id = %d--subtitle_flag = %t 该条数据,跳过处理", id, subtitle)
+			//ignore here
+		}
+
+	}
+
+}
+
+// CheckIfFirstStart
+//
+//	@Description: 检测是否是第一次运行
+//	@param configFile
+//	@return *config.Config
+func CheckIfFirstStart(configFile string) *config.Config {
+	if utils.FileOrDirExists(configFile) {
+		log.AsmrLog.Info("程序已初始化完成,正在启动运行...")
+	} else {
+		log.AsmrLog.Info("检测到初次运行,请进行相关设置...")
+	}
+	return config.GetConfig()
 }
