@@ -123,6 +123,7 @@ func SimpleModeDownload(idList []string) {
 		AutoForNextBatch: false,
 		DownloadDir:      "./",
 		MetaDataDb:       "",
+		PrioritizeMP3:      true,
 	}
 	asmrClient := spider.NewASMRClient(6, c)
 	err := asmrClient.Login()

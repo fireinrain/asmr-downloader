@@ -187,6 +187,8 @@ type Config struct {
 	MetaDataDb string `json:"meta_data_db"`
 	//最大重试次数
 	MaxFailedRetry int `json:"max_failed_retry"`
+	//是否跳过MP3文件
+	PrioritizeMP3 bool `json:"skip_mp3_file"`
 }
 
 // SafePrintInfoStr
@@ -227,6 +229,7 @@ func generateDefaultConfig() {
 		DownloadDir:      "data",
 		MetaDataDb:       "asmr.db",
 		MaxFailedRetry:   3,
+		PrioritizeMP3:      true,
 	}
 
 	//提示用户输入用户名
@@ -285,6 +288,13 @@ func generateDefaultConfig() {
 		}
 	}
 	customConfig.DownloadDir = dowwnloadDir
+
+	PrioritizeMP3 := utils.PromotForInput("是否只下载MP3文件(Y/N)(默认为Y): ", "Y")
+	if PrioritizeMP3 == "N" {
+		customConfig.PrioritizeMP3 = false
+	} else {
+		customConfig.PrioritizeMP3 = true
+	}
 
 	config, err := json.Marshal(customConfig)
 	if err != nil {
