@@ -172,23 +172,26 @@ func GetRespFastestSiteUrl() string {
 //	Config
 //	@Description: 配置结构体
 type Config struct {
-	Account   string `json:"account"`
-	Password  string `json:"password"`
-	MaxWorker int    `json:"max_worker"`
+	//账号
+	Account string `json:"account"`
+	//密码
+	Password string `json:"password"`
+	//最大并发数
+	MaxWorker int `json:"max_worker"`
 	//批量下载次数
 	BatchTaskCount int `json:"batch_task_count"`
-	//批量下载完后休息多少秒(防止服务器ban你)
+	//批量下载间隔
 	BatchSleepTime int `json:"batch_sleep_time"`
-	//是否自动执行 下一个批次
+	//是否自动执行下一批次下载
 	AutoForNextBatch bool `json:"auto_for_next_batch"`
 	//下载目录
 	DownloadDir string `json:"download_dir"`
-	//元数据库
+	//元数据数据库
 	MetaDataDb string `json:"meta_data_db"`
-	//最大重试次数
+	//最大失败重试次数
 	MaxFailedRetry int `json:"max_failed_retry"`
-	//是否跳过MP3文件
-	PrioritizeMP3 bool `json:"skip_mp3_file"`
+	// 下载类型: "prioritizemp3" - 优先下载MP3文件(如果存在同名的WAV/FLAC则跳过)，"all" - 下载所有文件
+	DownloadType string `json:"download_type"`
 }
 
 // SafePrintInfoStr
@@ -207,6 +210,7 @@ func (receiver *Config) SafePrintInfoStr() string {
 		DownloadDir:      receiver.DownloadDir,
 		MetaDataDb:       receiver.MetaDataDb,
 		MaxFailedRetry:   receiver.MaxFailedRetry,
+		DownloadType:     receiver.DownloadType,
 	}
 	marshal, err := json.Marshal(config)
 	if err != nil {
@@ -229,7 +233,7 @@ func generateDefaultConfig() {
 		DownloadDir:      "data",
 		MetaDataDb:       "asmr.db",
 		MaxFailedRetry:   3,
-		PrioritizeMP3:      true,
+		DownloadType:     "all",
 	}
 
 	//提示用户输入用户名
@@ -289,11 +293,19 @@ func generateDefaultConfig() {
 	}
 	customConfig.DownloadDir = dowwnloadDir
 
-	PrioritizeMP3 := utils.PromotForInput("是否只下载MP3文件(Y/N)(默认为Y): ", "Y")
-	if PrioritizeMP3 == "N" {
-		customConfig.PrioritizeMP3 = false
-	} else {
-		customConfig.PrioritizeMP3 = true
+	downloadTypePrompt := "请选择下载类型:\n1. 优先下载MP3文件(如果存在同名的WAV/FLAC则跳过)\n2. 下载所有文件(包括MP3、WAV和FLAC)\n请输入选项(1-2，默认为1): "
+	downloadTypeStr := utils.PromotForInput(downloadTypePrompt, "1")
+	downloadTypeInt, err := strconv.Atoi(downloadTypeStr)
+	if err != nil || downloadTypeInt < 1 || downloadTypeInt > 2 {
+		log.AsmrLog.Info("输入选项无效，使用默认选项1")
+		downloadTypeInt = 1
+	}
+
+	switch downloadTypeInt {
+	case 1:
+		customConfig.DownloadType = "prioritizemp3"
+	case 2:
+		customConfig.DownloadType = "all"
 	}
 
 	config, err := json.Marshal(customConfig)
