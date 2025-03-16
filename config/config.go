@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -49,27 +50,46 @@ func GetAsmrLatestUrls() ([]string, error) {
 	req, _ := http.NewRequest("GET", officialPublishSite, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36")
 	resp, err := client.Do(req)
-	if err != nil || resp.StatusCode != 200 {
-		log.AsmrLog.Info("尝试访问asmr.one最新站点发布页as.mr失败: ", zap.String("error", err.Error()))
+
+	if err != nil || resp == nil || resp.StatusCode != 200 {
+		errMsg := "连接超时"
+		if err != nil {
+			errMsg = err.Error()
+		}
+		log.AsmrLog.Info("尝试访问asmr.one最新站点发布页as.mr失败: ", zap.String("error", errMsg))
 		log.AsmrLog.Info("当前使用as.131433.xyz代理访问最新站点发布页")
 		latestPublishSite = cfProxyPublishSite
+		utils.Client.Put(client)
+		if resp != nil && resp.Body != nil {
+			resp.Body.Close()
+		}
 	} else {
 		log.AsmrLog.Info("当前使用as.mr访问最新站点发布页...")
 		latestPublishSite = officialPublishSite
+		utils.Client.Put(client)
+		resp.Body.Close()
 	}
-	utils.Client.Put(client)
-	defer resp.Body.Close()
 
 	client = utils.Client.Get().(*http.Client)
 	req, _ = http.NewRequest("GET", latestPublishSite, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36")
 	resp, err = client.Do(req)
-	if err != nil || resp.StatusCode != 200 {
-		log.AsmrLog.Error("访问asmr.one最新域名发布页出现错误: ", zap.String("error", err.Error()))
-		return nil, err
+	if err != nil || resp == nil || resp.StatusCode != 200 {
+		errMsg := "连接超时"
+		if err != nil {
+			errMsg = err.Error()
+		}
+		log.AsmrLog.Error("访问asmr.one最新域名发布页出现错误: ", zap.String("error", errMsg))
+		utils.Client.Put(client)
+		if resp != nil && resp.Body != nil {
+			resp.Body.Close()
+		}
+		return nil, fmt.Errorf("无法访问发布页: %s", errMsg)
 	}
-	utils.Client.Put(client)
+
 	defer resp.Body.Close()
+	utils.Client.Put(client)
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.AsmrLog.Error("Error reading response body:", zap.String("error", err.Error()))
@@ -131,10 +151,17 @@ func GetAsmrLatestUrls() ([]string, error) {
 func GetRespFastestSiteUrl() string {
 	latestUrls, err := GetAsmrLatestUrls()
 	if err != nil {
-		log.AsmrLog.Error("获取最新域名列表失败: ", zap.String("error", err.Error()))
+		log.AsmrLog.Error("获取最新域名列表失败，使用默认API地址: ", zap.String("error", err.Error()))
 		//as the default
 		return "https://api.asmr.one"
 	}
+
+	// 如果没有获取到任何URL，返回默认值
+	if len(latestUrls) == 0 {
+		log.AsmrLog.Error("未获取到任何有效域名，使用默认API地址")
+		return "https://api.asmr.one"
+	}
+
 	var wg sync.WaitGroup
 	ch := make(chan string, len(latestUrls))
 
