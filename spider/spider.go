@@ -169,9 +169,20 @@ func (asmrClient *ASMRClient) EnsureFileDirsExist(tracks []track, basePath strin
 		}
 	}
 	_ = os.MkdirAll(path, os.ModePerm)
-	
-	if asmrClient.GlobalConfig.PrioritizeMP3 {
 
+	// 根据下载类型处理
+	switch asmrClient.GlobalConfig.DownloadType {
+	case "all":
+		// 下载所有文件
+		for _, t := range tracks {
+			if t.Type != "folder" {
+				asmrClient.DownloadFile(t.MediaDownloadURL, path, t.Title)
+			} else {
+				asmrClient.EnsureFileDirsExist(t.Children, fmt.Sprintf("%s/%s", path, t.Title))
+			}
+		}
+	case "prioritizemp3":
+		// 优先下载MP3文件
 		// 第一遍：收集所有MP3文件标题
 		mp3Titles := make(map[string]bool)
 		var collectMP3Titles func([]track, string)
@@ -212,19 +223,20 @@ func (asmrClient *ASMRClient) EnsureFileDirsExist(tracks []track, basePath strin
 				} else {
 					baseTitle := strings.TrimSuffix(t.Title, filepath.Ext(t.Title))
 					ext := strings.ToLower(filepath.Ext(t.Title))
-					
+
 					// 如果是WAV/FLAC文件且存在MP3版本，则跳过
 					if (ext == ".wav" || ext == ".flac") && mp3Titles[baseTitle] {
 						log.AsmrLog.Info(fmt.Sprintf("跳过 %s 因为存在 MP3 版本", t.Title))
 						continue
 					}
-					
+
 					asmrClient.DownloadFile(t.MediaDownloadURL, currentPath, t.Title)
 				}
 			}
 		}
 		processFiles(tracks, path)
-	}else{
+	default:
+		// 默认行为，下载所有文件
 		for _, t := range tracks {
 			if t.Type != "folder" {
 				asmrClient.DownloadFile(t.MediaDownloadURL, path, t.Title)

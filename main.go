@@ -31,20 +31,30 @@ func main() {
 	if len(os.Args) >= 2 && os.Args[1] != "" {
 		builder := strings.Builder{}
 		container := []string{}
+		allFlag := false
 
 		for k, v := range os.Args {
 			if k == 0 {
 				continue
 			}
 			cleanValue := strings.TrimSpace(v)
+			if strings.ToLower(cleanValue) == "all" {
+				allFlag = true
+				continue
+			}
 			if !strings.HasPrefix(cleanValue, "RJ") {
 				log.AsmrLog.Fatal("参数格式有误,请重新输入参数并运行")
 			}
 			container = append(container, cleanValue)
 			builder.WriteString(cleanValue + " ")
 		}
+
+		if len(container) == 0 {
+			log.AsmrLog.Fatal("请至少输入一个RJ号")
+		}
+
 		log.AsmrLog.Info("正在查询：", zap.String("info", builder.String()))
-		SimpleModeDownload(container)
+		SimpleModeDownload(container, allFlag)
 		return
 	}
 
@@ -113,7 +123,7 @@ func main() {
 	_ = storage.StoreDb.Db.Close()
 }
 
-func SimpleModeDownload(idList []string) {
+func SimpleModeDownload(idList []string, allFlag bool) {
 	c := &config.Config{
 		Account:          "guset",
 		Password:         "guest",
@@ -123,8 +133,14 @@ func SimpleModeDownload(idList []string) {
 		AutoForNextBatch: false,
 		DownloadDir:      "./",
 		MetaDataDb:       "",
-		PrioritizeMP3:      true,
+		DownloadType:     "prioritizemp3",
 	}
+
+	if allFlag {
+		c.DownloadType = "all"
+		log.AsmrLog.Info("将下载所有文件 (包括MP3、WAV和FLAC)")
+	}
+
 	asmrClient := spider.NewASMRClient(6, c)
 	err := asmrClient.Login()
 	if err != nil {
@@ -142,7 +158,6 @@ func SimpleModeDownload(idList []string) {
 	}
 	_ = pool.Wait()
 	log.AsmrLog.Info("所有任务下载完成,程序即将退出 ")
-
 }
 
 // DownloadItemHandler
