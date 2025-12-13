@@ -1,0 +1,146 @@
+GET https://api.asmr.one/api/works?order=create_date&sort=desc&page=1&seed=67&subtitle=0
+authority: api.asmr.one
+method: GET
+path: /api/works?order=create_date&sort=desc&page=1&seed=67&subtitle=0
+scheme: https
+accept: application/json, text/plain, */*
+accept-encoding: gzip, deflate, br
+accept-language: zh,en;q=0.9,zh-TW;q=0.8,zh-CN;q=0.7,ja;q=0.6
+authorization: replace-with-your-auth-str
+cache-control: no-cache
+origin: https://www.asmr.one
+pragma: no-cache
+referer: https://www.asmr.one/
+sec-ch-ua: "Not?A_Brand";v="8", "Chromium";v="108", "Google Chrome";v="108"
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "macOS"
+sec-fetch-dest: empty
+sec-fetch-mode: cors
+sec-fetch-site: same-site
+user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36
+
+
+
+
+### ASMR.one Auth Me API
+POST https://api.asmr-300.com/api/auth/me HTTP/1.1
+accept: application/json, text/plain, */*
+accept-encoding: gzip
+accept-language: en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7
+authorization: null
+cache-control: no-cache
+content-type: application/json
+origin: https://asmr.one
+pragma: no-cache
+priority: u=1, i
+referer: https://asmr.one/
+sec-ch-ua: "Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "macOS"
+sec-fetch-dest: empty
+sec-fetch-mode: cors
+sec-fetch-site: cross-site
+user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36
+
+{
+    "name": "guest",
+    "password": "guest"
+}
+
+
+
+###
+GET https://api.asmr-300.com/api/workinfo/01426915 HTTP/1.1
+accept: application/json, text/plain, */*
+accept-encoding: gzip
+accept-language: en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7
+authorization: null
+cache-control: no-cache
+content-type: application/json
+origin: https://asmr.one
+authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2FzbXIub25lIiwic3ViIjoiZ3Vlc3QiLCJhdWQiOiJodHRwczovL2FzbXIub25lL2FwaSIsIm5hbWUiOiJndWVzdCIsImdyb3VwIjoidXNlciIsImlhdCI6MTc2NTAxOTM4OSwiZXhwIjoxNzk2NTU1Mzg5fQ.5pDuOcc1LG24QOXnHxiqRw__DCmVTx3nqOptNFQs28A
+pragma: no-cache
+priority: u=1, i
+referer: https://asmr.one/
+sec-ch-ua: "Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "macOS"
+sec-fetch-dest: empty
+sec-fetch-mode: cors
+sec-fetch-site: cross-site
+user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36
+
+
+#https://api.asmr-300.com/api/search/%20%E4%BF%AE%E5%A5%B3%20%E6%B4%97%E8%84%91%20-%E8%A7%A6%E6%89%8B%20%24tag%3A%E5%86%85%E5%B0%84%2F%E4%B8%AD%E5%87%BA%24%20%24circle%3A%E9%9D%92%E6%98%A5%C3%97%E3%83%95%E3%82%A7%E3%83%86%E3%82%A3%E3%82%B7%E3%82%BA%E3%83%A0%24%20%24va%3A%E9%99%BD%E5%90%91%E8%91%B5%E3%82%85%E3%81%8B%24%20%24duration%3A1h%24%20%24rate%3A4.75%24%20%24-price%3A1000%24%20%24sell%3A700%24%20%24age%3Aadult%24%20%24-lang%3AJPN%3Forder%3Ddl_count%26sort%3Ddesc%26page%3D1%26pageSize%3D20%26subtitle%3D0%26includeTranslationWorks%3Dtrue
+
+#search 修女,洗脑,-触手@tag:内射/中出,circle:青春×フェティシズム,va:陽向葵ゅか,duration:1h,rate:4.75,-price:1000,sell:700,age:adult,-lang:JPN?order=dl_count&sort=desc&page=1&pageSize=20&subtitle=0&includeTranslationWorks=true -c 100
+#护士,-中出@va:柚木つばめ,duration:1h
+###
+GET https://api.asmr-300.com/api/search/%20%24va%3A%E6%9F%9A%E6%9C%A8%E3%81%A4%E3%81%B0%E3%82%81%24%20%24tag%3A%E5%86%85%E5%B0%84%2F%E4%B8%AD%E5%87%BA%24?order=dl_count&sort=desc&page=1&pageSize=20&subtitle=0&includeTranslationWorks=true HTTP/1.1
+accept: application/json, text/plain, */*
+accept-encoding: gzip
+accept-language: en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7
+authorization: null
+cache-control: no-cache
+content-type: application/json
+origin: https://asmr.one
+authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2FzbXIub25lIiwic3ViIjoiZ3Vlc3QiLCJhdWQiOiJodHRwczovL2FzbXIub25lL2FwaSIsIm5hbWUiOiJndWVzdCIsImdyb3VwIjoidXNlciIsImlhdCI6MTc2NTA5NDI4NSwiZXhwIjoxNzk2NjMwMjg1fQ.r9fyam2U2AOess4fVLgu38h4mWx9WQcNAnHt2n-KHl0
+pragma: no-cache
+priority: u=1, i
+referer: https://asmr.one/
+sec-ch-ua: "Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "macOS"
+sec-fetch-dest: empty
+sec-fetch-mode: cors
+sec-fetch-site: cross-site
+user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36
+
+
+#https://api.asmr-300.com/api/search/%20%E6%8A%A4%E5%A3%AB%20-%E4%B8%AD%E5%87%BA%20%24va%3A%E6%9F%9A%E6%9C%A8%E3%81%A4%E3%81%B0%E3%82%81%24%20%24duration%3A1h%24%3Forder%3Ddesc%26sort%3Drelease%26page%3D1%26pageSize%3D20%26subtitle%3D0%26includeTranslationWorks%3Dtrue
+#https://api.asmr-300.com/api/search/%20%E6%8A%A4%E5%A3%AB%20-%E4%B8%AD%E5%87%BA%20%24va%3A%E6%9F%9A%E6%9C%A8%E3%81%A4%E3%81%B0%E3%82%81%24%20%24duration%3A1h%24?order=dl_count&sort=desc&page=1&pageSize=20&subtitle=0&includeTranslationWorks=true
+#https://api.asmr-300.com/api/search/%20%E6%8A%A4%E5%A3%AB%20-%E4%B8%AD%E5%87%BA%20%24va%3A%E6%9F%9A%E6%9C%A8%E3%81%A4%E3%81%B0%E3%82%81%24%20%24duration%3A1h%24?order=desc&sort=release&page=1&pageSize=20&subtitle=0&includeTranslationWorks=true
+###
+GET https://api.asmr-300.com/api/search/%20%24va%3A%E6%9F%9A%E6%9C%A8%E3%81%A4%E3%81%B0%E3%82%81%24%20%24tag%3A%E5%86%85%E5%B0%84%2F%E4%B8%AD%E5%87%BA%24?order=dl_count&sort=desc&page=1&pageSize=20&subtitle=0&includeTranslationWorks=true HTTP/1.1
+accept: application/json, text/plain, */*
+accept-encoding: gzip
+accept-language: en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7
+authorization: null
+cache-control: no-cache
+content-type: application/json
+origin: https://asmr.one
+authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2FzbXIub25lIiwic3ViIjoiZ3Vlc3QiLCJhdWQiOiJodHRwczovL2FzbXIub25lL2FwaSIsIm5hbWUiOiJndWVzdCIsImdyb3VwIjoidXNlciIsImlhdCI6MTc2NTA5NDI4NSwiZXhwIjoxNzk2NjMwMjg1fQ.r9fyam2U2AOess4fVLgu38h4mWx9WQcNAnHt2n-KHl0
+pragma: no-cache
+priority: u=1, i
+referer: https://asmr.one/
+sec-ch-ua: "Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "macOS"
+sec-fetch-dest: empty
+sec-fetch-mode: cors
+sec-fetch-site: cross-site
+user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36
+
+
+
+###
+//https://api.asmr-300.com/api/works?order=release&sort=desc&page=1&pageSize=20&subtitle=0
+GET https://api.asmr-300.com/api/works?order=release&sort=desc&page=583&pageSize=100 HTTP/1.1
+accept: application/json, text/plain, */*
+accept-encoding: gzip
+accept-language: en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7
+authorization: null
+cache-control: no-cache
+content-type: application/json
+origin: https://asmr.one
+authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2FzbXIub25lIiwic3ViIjoiZ3Vlc3QiLCJhdWQiOiJodHRwczovL2FzbXIub25lL2FwaSIsIm5hbWUiOiJndWVzdCIsImdyb3VwIjoidXNlciIsImlhdCI6MTc2NTA5NDI4NSwiZXhwIjoxNzk2NjMwMjg1fQ.r9fyam2U2AOess4fVLgu38h4mWx9WQcNAnHt2n-KHl0
+pragma: no-cache
+priority: u=1, i
+referer: https://asmr.one/
+sec-ch-ua: "Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "macOS"
+sec-fetch-dest: empty
+sec-fetch-mode: cors
+sec-fetch-site: cross-site
+user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36

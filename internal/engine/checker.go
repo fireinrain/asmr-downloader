@@ -1,0 +1,130 @@
+package engine
+
+import (
+	"asmroner/internal/consts"
+	"asmroner/internal/model"
+	"fmt"
+	"log"
+	"regexp"
+	"strings"
+	"sync"
+	"time"
+
+	"asmroner/internal/utils"
+
+	"github.com/go-resty/resty/v2"
+)
+
+// GetAsmrLatestUrls 获取 asmr.one 最新域名列表
+func GetAsmrLatestUrls() ([]string, error) {
+	officialPublishSite := "https://as.mr"
+	cfProxyPublishSite := "https://as.131433.xyz"
+	var latestPublishSite string
+
+	// 初始化 Resty 客户端
+	client := resty.New().
+		SetTimeout(10*time.Second).
+		SetHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36")
+
+	// 先尝试官方站点
+	resp, err := client.R().Get(officialPublishSite)
+	if err != nil || resp.StatusCode() != 200 {
+		log.Println("尝试访问asmr.one最新站点发布页as.mr失败: ", err.Error())
+		log.Println("当前使用as.131433.xyz代理访问最新站点发布页...")
+		latestPublishSite = cfProxyPublishSite
+	} else {
+		log.Println("当前使用as.mr访问最新站点发布页...")
+		latestPublishSite = officialPublishSite
+	}
+
+	// 访问最新发布页获取 HTML
+	resp, err = client.R().Get(latestPublishSite)
+	if err != nil || resp.StatusCode() != 200 {
+		log.Println("访问asmr.one最新域名发布页出现错误: ", err.Error())
+		return nil, err
+	}
+	bodyText := resp.String()
+
+	// 正则匹配 JS 文件路径
+	pattern := `<script type="module" crossorigin src="(/assets/index\.[a-f0-9]+\.js)"></script>`
+	re := regexp.MustCompile(pattern)
+	match := re.FindStringSubmatch(bodyText)
+
+	var jsFilePath string
+	if len(match) > 1 {
+		jsFilePath = match[1]
+	} else {
+		log.Println("JavaScript file path not found in HTML")
+		return nil, fmt.Errorf("js file path not found")
+	}
+
+	jsContentUrl := latestPublishSite + jsFilePath
+	resp, err = client.R().Get(jsContentUrl)
+	if err != nil || resp.StatusCode() != 200 {
+		log.Println("访问asmr.one最新域名发布页js resource出现错误: ", err.Error())
+		return nil, err
+	}
+	jsText := resp.String()
+
+	// 从 JS 内容提取快速响应的站点 URL
+	sitePattern := `link:\s*"([^"]+)"`
+	re = regexp.MustCompile(sitePattern)
+	matches := re.FindAllStringSubmatch(jsText, -1)
+
+	var result []string
+	for _, match := range matches {
+		if len(match) > 1 {
+			link := match[1]
+			if strings.HasPrefix(link, "https://") {
+				result = append(result, link)
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// GetRespFastestSiteUrl 获取最快的响应 API 地址
+func GetRespFastestSiteUrl() string {
+	u := model.AppConfig.Downloader.ApiUrl
+	if u != "" {
+		return u
+	}
+	if consts.AsmrBaseApiUrl != "" {
+		return consts.AsmrBaseApiUrl
+	}
+
+	latestUrls, err := GetAsmrLatestUrls()
+	if err != nil {
+		log.Println("获取最新域名列表失败: ", err.Error())
+		return "https://api.asmr.one" // 默认返回
+	}
+
+	var wg sync.WaitGroup
+	ch := make(chan string, len(latestUrls))
+
+	for _, url := range latestUrls {
+		wg.Add(1)
+		go utils.FastFetch(url, &wg, ch)
+	}
+
+	go func() {
+		wg.Wait()
+		close(ch)
+	}()
+
+	var fastestResponse string
+	for response := range ch {
+		if fastestResponse == "" || len(response) < len(fastestResponse) {
+			fastestResponse = response
+		}
+		log.Println("Checking Fast Response: ", response)
+	}
+
+	log.Println("Fastest Response is: ", fastestResponse)
+	fastUrls := strings.Split(fastestResponse, "|")
+	url := fastUrls[0]
+	url = strings.Trim(url, "/")
+	apiUrl := strings.Replace(url, "https://", "https://api.", 1)
+	return apiUrl
+}

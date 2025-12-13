@@ -1,0 +1,75 @@
+name: Build Multi-platform Binaries
+
+on:
+  push:
+    tags: [ 'v*.*.*' ]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            goos: linux
+            goarch: amd64
+            suffix: ''
+          - os: windows
+            arch: amd64
+            goos: windows
+            goarch: amd64
+            suffix: '.exe'
+          - os: macos
+            arch: amd64
+            goos: darwin
+            goarch: amd64
+            suffix: ''
+          - os: macos
+            arch: arm64
+            goos: darwin
+            goarch: arm64
+            suffix: ''
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24.0'
+          cache: true
+
+      - name: Download dependencies
+        run: go mod tidy
+
+      - name: Build binary
+        run: |
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+          go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" \
+          -o asmroner-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.suffix }}
+
+      - name: Create release assets
+        run: |
+          mkdir -p release
+          cp asmroner-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.suffix }} release/
+          
+          cd release
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            7z a ../asmroner-${{ matrix.os }}-${{ matrix.arch }}-${{ github.ref_name }}.zip *
+          else
+            zip -r ../asmroner-${{ matrix.os }}-${{ matrix.arch }}-${{ github.ref_name }}.zip *
+          fi
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v1
+        with:
+          files: asmroner-${{ matrix.os }}-${{ matrix.arch }}-${{ github.ref_name }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio Player Lite</title>
+
+  <script src="/public/js/tailwindcss-3.4.17.js"></script>
+
+  <link rel="stylesheet" href="/public/css/plyr-3.7.8.css" />
+  <script src="/public/js/plyr-3.7.8.js"></script>
+
+  <style>
+      /* 自定义滚动条 */
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 3px; }
+      ::-webkit-scrollbar-thumb:hover { background: #d1d5db; }
+
+      /* 黑胶唱片旋转动画 */
+      @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+      .vinyl-spin { animation: spin 10s linear infinite; }
+      .vinyl-paused { animation-play-state: paused; }
+
+      /* Plyr 自定义主题色 (粉色) */
+      :root { --plyr-color-main: #ec4899; }
+
+      /* 文本截断 */
+      .line-clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+      .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  </style>
+</head>
+
+<body class="bg-gray-50 h-screen w-screen overflow-hidden text-gray-700 font-sans">
+
+<div class="flex flex-col md:flex-row h-full w-full max-w-[1920px] mx-auto bg-white shadow-xl overflow-hidden">
+
+  <div class="w-full md:w-[400px] flex flex-col border-r border-gray-100 bg-white z-20 h-full">
+
+    <div class="p-4 border-b border-gray-100 flex justify-between items-center bg-white/95 backdrop-blur z-10 sticky top-0">
+      <h1 class="font-bold text-pink-500 text-lg tracking-tight"><i class="fas fa-music mr-2"></i>ASMR Lite</h1>
+      <div class="flex gap-3 text-gray-400">
+        <button class="hover:text-pink-500 transition"><i class="fas fa-search"></i></button>
+        <button class="hover:text-pink-500 transition"><i class="fas fa-bars"></i></button>
+      </div>
+    </div>
+
+    <ul id="folderList" class="flex-1 overflow-y-auto p-2 space-y-1">
+      <div class="text-center py-10 text-gray-400 text-sm">正在加载目录...</div>
+    </ul>
+
+    <div class="p-3 border-t border-gray-100 flex justify-between items-center bg-gray-50 text-sm">
+      <button id="prevPage" class="px-3 py-1.5 rounded-md bg-white border border-gray-200 hover:bg-pink-50 hover:text-pink-500 hover:border-pink-200 transition disabled:opacity-50">上一页</button>
+      <span id="pageInfo" class="font-mono text-gray-500">1/1</span>
+      <button id="nextPage" class="px-3 py-1.5 rounded-md bg-white border border-gray-200 hover:bg-pink-50 hover:text-pink-500 hover:border-pink-200 transition disabled:opacity-50">下一页</button>
+    </div>
+  </div>
+
+  <div class="flex-1 flex flex-col h-full relative z-10 bg-white">
+
+    <div class="bg-[#111827] relative w-full shrink-0 md:h-[45vh] flex flex-col justify-center items-center p-4 overflow-hidden group">
+
+      <div id="playerBg" class="absolute inset-0 bg-cover bg-center opacity-20 blur-xl transition-all duration-700" style="background-image: url('');"></div>
+
+      <div class="relative z-10 mb-6 hidden md:block">
+        <div id="vinylRecord" class="w-48 h-48 rounded-full bg-black border-4 border-gray-800 shadow-2xl flex items-center justify-center vinyl-paused">
+          <img id="vinylCover" src="https://via.placeholder.com/150" class="w-32 h-32 rounded-full object-cover opacity-80" alt="Cover">
+        </div>
+      </div>
+
+      <div class="w-full max-w-3xl z-20 shadow-lg rounded-xl overflow-hidden bg-black">
+        <audio id="player" controls class="w-full"></audio>
+      </div>
+
+      <div class="mt-4 z-20 text-center px-4">
+        <h3 id="mediaTitle" class="text-white font-medium text-lg line-clamp-1">未播放</h3>
+        <p id="mediaSubtitle" class="text-gray-400 text-sm mt-1">选择左侧列表开始播放</p>
+      </div>
+    </div>
+
+    <div class="flex-1 overflow-y-auto bg-white flex flex-col">
+      <div class="px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10 flex gap-4">
+        <span class="px-3 py-1 bg-pink-500 text-white text-xs rounded-full font-bold">MP3 / WAV</span>
+        <span class="text-gray-400 text-xs flex items-center">播放列表</span>
+      </div>
+
+      <ul id="mediaList" class="p-2 space-y-1 pb-20">
+        <li class="text-center text-gray-400 text-sm py-10">暂无媒体文件，请点击左侧目录</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
+
+<script>
+  let currentPage = 1;
+  let pageSize = 20;
+  let player = null;
+
+  let currentMediaList = [];
+  let currentMediaIndex = -1;
+  let currentFolder = null;
+
+  document.addEventListener("DOMContentLoaded", () => {
+    // 初始化 Plyr
+    player = new Plyr('#player', {
+      controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'settings', 'fullscreen'],
+      captions: { active: true, update: true, language: 'zh' }
+    });
+
+    // 监听播放事件控制黑胶动画
+    player.on('playing', () => {
+      document.getElementById('vinylRecord').classList.add('vinyl-spin');
+      document.getElementById('vinylRecord').classList.remove('vinyl-paused');
+    });
+    player.on('pause', () => {
+      document.getElementById('vinylRecord').classList.add('vinyl-paused');
+    });
+    player.on('ended', () => {
+      playNextMedia();
+    });
+
+    loadFolders(currentPage);
+
+    document.getElementById("prevPage").onclick = () => {
+      if (currentPage > 1) {
+        currentPage--;
+        loadFolders(currentPage);
+      }
+    };
+
+    document.getElementById("nextPage").onclick = () => {
+      currentPage++;
+      loadFolders(currentPage);
+    };
+  });
+
+
+  /** 加载目录列表 */
+  function loadFolders(page) {
+    // 模拟 loading 状态
+    document.getElementById("folderList").innerHTML = '<div class="flex justify-center py-10"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-500"></div></div>';
+
+    fetch(`/api/list?page=${page}&pageSize=${pageSize}`)
+      .then(res => res.json())
+      .then(json => {
+        const data = json.data;
+        renderFolders(data.infos);
+
+        document.getElementById("pageInfo").innerText =
+          `${data.page} / ${Math.ceil(data.total / data.pageSize)}`;
+
+        // 更新翻页按钮状态
+        document.getElementById("prevPage").disabled = data.page <= 1;
+        document.getElementById("nextPage").disabled = data.page >= Math.ceil(data.total / data.pageSize);
+      })
+      .catch(err => {
+        document.getElementById("folderList").innerHTML = `<div class="text-center py-10 text-red-400">加载失败: ${err}</div>`;
+      });
+  }
+
+
+  /** 渲染目录 (卡片样式) */
+  function renderFolders(folders) {
+    const ul = document.getElementById("folderList");
+    ul.innerHTML = "";
+
+    folders.forEach((folder, folderIndex) => {
+      const li = document.createElement("li");
+
+      // 尝试获取封面图 (这里假设 folder 结构里可能有 cover 字段，如果没有就用占位图)
+      // 注意：你需要根据你实际的 API 返回结构调整这里
+      const coverUrl = folder.cover || "/public/css/img.png";
+
+      // 生成卡片 HTML
+      li.className = "group cursor-pointer rounded-xl p-3 hover:bg-gray-50 transition border border-transparent hover:border-pink-100 flex gap-3 items-center";
+      li.innerHTML = `
+        <div class="relative w-16 h-16 shrink-0">
+            <img src="${coverUrl}" class="w-full h-full object-cover rounded-lg shadow-sm bg-gray-200" alt="cover">
+            <div class="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition rounded-lg"></div>
+        </div>
+        <div class="flex-1 min-w-0">
+            <div class="font-bold text-gray-800 text-sm line-clamp-2 leading-tight mb-1 group-hover:text-pink-600 transition">${folder.name}</div>
+            <div class="flex items-center gap-2 text-xs text-gray-400">
+                <span class="bg-gray-100 px-1.5 py-0.5 rounded text-gray-500 font-mono">${folder.rj_code || 'RJ-----'}</span>
+                <span><i class="fas fa-star text-yellow-400 mr-1"></i>${folder.rating || '0.0'}</span>
+            </div>
+        </div>
+        <button class="text-gray-300 hover:text-pink-500 p-2"><i class="far fa-heart"></i></button>
+      `;
+
+      li.onclick = (e) => {
+        // 防止点击爱心触发播放
+        if(e.target.closest('button')) return;
+        onFolderClicked(folder, folderIndex);
+      };
+
+      ul.appendChild(li);
+    });
+
+    highlightCurrentFolder();
+  }
+
+  /** 点击目录 → 展示媒体文件 */
+  function onFolderClicked(folder, folderIndex) {
+    currentFolder = folder;
+    highlightCurrentFolder();
+
+    // 更新右侧标题区
+    document.getElementById("mediaTitle").innerText = folder.name;
+    document.getElementById("mediaSubtitle").innerText = folder.rj_code || "未知编号";
+
+    // 尝试更新背景图和黑胶封面
+    // 逻辑：如果在 files 里找到了图片，就用第一张作为背景
+    const coverFile = folder.files.find(f => f.name.match(/\.(jpg|jpeg|png|webp)$/i));
+    if (coverFile) {
+      const fullCoverPath = folder.baseDir + "/" + folder.name + "/" + coverFile.path;
+      document.getElementById('vinylCover').src = fullCoverPath;
+      document.getElementById('playerBg').style.backgroundImage = `url('${fullCoverPath}')`;
+    } else {
+      document.getElementById('vinylCover').src = "https://via.placeholder.com/150?text=NO+IMG";
+      document.getElementById('playerBg').style.backgroundImage = "none";
+    }
+
+    const mediaFiles = folder.files.filter(f =>
+      f.name.endsWith(".mp3") ||
+      f.name.endsWith(".wav") ||
+      f.name.endsWith(".flac")
+    );
+
+    currentMediaList = mediaFiles;
+    currentMediaIndex = -1;
+
+    renderMediaList(folder, mediaFiles);
+  }
+
+  /** 渲染媒体文件列表 */
+  function renderMediaList(folder, mediaFiles) {
+    const ul = document.getElementById("mediaList");
+    ul.innerHTML = "";
+
+    if(mediaFiles.length === 0) {
+      ul.innerHTML = '<div class="text-center py-10 text-gray-400">该目录下没有音频文件</div>';
+      return;
+    }
+
+    mediaFiles.forEach((file, index) => {
+      const li = document.createElement("li");
+      li.className = "flex items-center gap-3 p-3 rounded-lg hover:bg-pink-50 cursor-pointer group transition border-l-4 border-transparent";
+      li.innerHTML = `
+        <span class="text-xs font-mono text-gray-400 w-6 text-right group-hover:text-pink-400">${index + 1}</span>
+        <div class="flex-1 text-sm text-gray-700 font-medium truncate group-hover:text-pink-600">${file.name}</div>
+        <span class="text-xs text-gray-300 group-hover:text-pink-400">MP3</span>
+      `;
+
+      li.onclick = () => {
+        currentMediaIndex = index;
+        playMedia(folder, file);
+      };
+      ul.appendChild(li);
+    });
+  }
+
+  /** 播放媒体并更新高亮 */
+  function playMedia(folder, file) {
+    const base = folder.baseDir + "/" + folder.name + "/" + file.path;
+    const vttPath = base + ".vtt";
+    const vttFileName = file.path + ".vtt";
+    const subtitleExists = folder.files.some(f => f.path === vttFileName);
+
+    // 设置 Plyr 源
+    player.source = {
+      type: 'audio',
+      title: file.name,
+      sources: [{ src: base, type: 'audio/mp3' }],
+      tracks: subtitleExists ? [{
+        kind: 'captions',
+        label: '中文',
+        srclang: 'zh',
+        src: vttPath,
+        default: true,
+      }] : []
+    };
+
+    player.play();
+
+    // 更新 UI 高亮
+    updateMediaHighlight();
+
+    // 让黑胶转起来
+    document.getElementById('vinylRecord').classList.add('vinyl-spin');
+    document.getElementById('vinylRecord').classList.remove('vinyl-paused');
+  }
+
+  function updateMediaHighlight() {
+    const lis = document.querySelectorAll("#mediaList li");
+    lis.forEach((li, idx) => {
+      if (idx === currentMediaIndex) {
+        li.className = "flex items-center gap-3 p-3 rounded-lg bg-pink-50 cursor-pointer group transition border-l-4 border-pink-500 shadow-sm";
+        li.querySelector('.text-gray-700').classList.remove('text-gray-700');
+        li.querySelector('.font-medium').classList.add('text-pink-600');
+        // 播放动画图标
+        li.querySelector('span:first-child').innerHTML = '<i class="fas fa-volume-up text-pink-500 animate-pulse"></i>';
+      } else {
+        li.className = "flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 cursor-pointer group transition border-l-4 border-transparent";
+        li.querySelector('span:first-child').innerText = idx + 1;
+      }
+    });
+  }
+
+  function highlightCurrentFolder() {
+    if (!currentFolder) return;
+    const lis = document.querySelectorAll("#folderList > li");
+    lis.forEach(li => {
+      // 这里简单判断 html 内容包含 name 即为选中，实际建议给 li 加 data-id 属性
+      if (li.innerText.includes(currentFolder.name)) {
+        li.classList.add("bg-pink-50", "border-pink-200");
+        li.classList.remove("border-transparent");
+      } else {
+        li.classList.remove("bg-pink-50", "border-pink-200");
+        li.classList.add("border-transparent");
+      }
+    });
+  }
+
+  /** 播放下一首 */
+  function playNextMedia() {
+    if (currentMediaList.length > 0 && currentMediaIndex + 1 < currentMediaList.length) {
+      currentMediaIndex++;
+      playMedia(currentFolder, currentMediaList[currentMediaIndex]);
+    } else {
+      // 切换目录逻辑 (保持原有逻辑，增加 UI 提示)
+      const folderLis = document.querySelectorAll("#folderList > li");
+      // 简单查找 index
+      let currentFolderIndex = -1;
+      folderLis.forEach((li, i) => { if(li.classList.contains('bg-pink-50')) currentFolderIndex = i; });
+
+      const nextFolderIndex = currentFolderIndex + 1;
+
+      if (nextFolderIndex < folderLis.length) {
+        // 模拟点击下一章
+        folderLis[nextFolderIndex].click();
+
+        // 延迟一点播放，等待列表渲染
+        setTimeout(() => {
+          const nextMediaListLis = document.querySelectorAll("#mediaList li");
+          if(nextMediaListLis.length > 0) {
+            nextMediaListLis[0].click(); // 触发第一个文件的点击事件
+          }
+        }, 500);
+      }
+    }
+  }
+
+</script>
+
+</body>
+</html>
