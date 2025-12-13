@@ -20,6 +20,11 @@ jobs:
             goos: linux
             goarch: amd64
             suffix: ''
+          - os: linux
+            arch: arm64
+            goos: linux
+            goarch: arm64
+            suffix: ''
           - os: windows
             arch: amd64
             goos: windows
