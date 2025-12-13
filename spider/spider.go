@@ -120,7 +120,7 @@ func (asmrClient *ASMRClient) DownloadItem(id string, subtitleFlag int) {
 	log.AsmrLog.Info("作品 RJ 号: ", zap.String("info", rjId))
 	tracks, err := asmrClient.GetVoiceTracks(id)
 	if err != nil {
-		log.AsmrLog.Error(fmt.Sprintf("获取作品: %s音轨失败: %s\n", err.Error()))
+		log.AsmrLog.Error(fmt.Sprintf("获取作品: %s音轨失败: %s\n", id, err.Error()))
 		return
 	}
 	basePath := config.GetConfig().DownloadDir
@@ -145,7 +145,7 @@ func (asmrClient *ASMRClient) SimpleDownloadItem(id string) {
 	log.AsmrLog.Info("作品 RJ 号: ", zap.String("info", rjId))
 	tracks, err := asmrClient.GetVoiceTracks(realId)
 	if err != nil {
-		log.AsmrLog.Error(fmt.Sprintf("获取作品: %s音轨失败: %s\n", err.Error()))
+		log.AsmrLog.Error(fmt.Sprintf("获取作品: %s音轨失败: %s\n", id, err.Error()))
 		return
 	}
 	basePath := asmrClient.GlobalConfig.DownloadDir
