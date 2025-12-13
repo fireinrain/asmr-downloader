@@ -169,11 +169,80 @@ func (asmrClient *ASMRClient) EnsureFileDirsExist(tracks []track, basePath strin
 		}
 	}
 	_ = os.MkdirAll(path, os.ModePerm)
-	for _, t := range tracks {
-		if t.Type != "folder" {
-			asmrClient.DownloadFile(t.MediaDownloadURL, path, t.Title)
-		} else {
-			asmrClient.EnsureFileDirsExist(t.Children, fmt.Sprintf("%s/%s", path, t.Title))
+
+	// 根据下载类型处理
+	switch asmrClient.GlobalConfig.DownloadType {
+	case "all":
+		// 下载所有文件
+		for _, t := range tracks {
+			if t.Type != "folder" {
+				asmrClient.DownloadFile(t.MediaDownloadURL, path, t.Title)
+			} else {
+				asmrClient.EnsureFileDirsExist(t.Children, fmt.Sprintf("%s/%s", path, t.Title))
+			}
+		}
+	case "prioritizemp3":
+		// 优先下载MP3文件
+		// 第一遍：收集所有MP3文件标题
+		mp3Titles := make(map[string]bool)
+		var collectMP3Titles func([]track, string)
+		collectMP3Titles = func(tracks []track, currentPath string) {
+			mp3Path := currentPath
+			//windows 目录错误
+			if runtime.GOOS == "windows" {
+				for _, str := range []string{"?", "<", ">", ":", "*", "|", " "} {
+					mp3Path = strings.Replace(mp3Path, str, "_", -1)
+				}
+			}
+			_ = os.MkdirAll(mp3Path, os.ModePerm)
+			for _, t := range tracks {
+				if t.Type == "folder" {
+					collectMP3Titles(t.Children, fmt.Sprintf("%s/%s", mp3Path, t.Title))
+				} else if strings.HasSuffix(strings.ToLower(t.Title), ".mp3") {
+					baseTitle := strings.TrimSuffix(t.Title, filepath.Ext(t.Title))
+					mp3Titles[baseTitle] = true
+				}
+			}
+		}
+		collectMP3Titles(tracks, path)
+
+		// 第二遍：下载文件，如果存在MP3版本则跳过WAV/FLAC文件
+		var processFiles func([]track, string)
+		processFiles = func(tracks []track, currentPath string) {
+			allPath := currentPath
+			//windows 目录错误
+			if runtime.GOOS == "windows" {
+				for _, str := range []string{"?", "<", ">", ":", "*", "|", " "} {
+					allPath = strings.Replace(allPath, str, "_", -1)
+				}
+			}
+			_ = os.MkdirAll(allPath, os.ModePerm)
+			for _, t := range tracks {
+				if t.Type == "folder" {
+					processFiles(t.Children, fmt.Sprintf("%s/%s", currentPath, t.Title))
+				} else {
+					baseTitle := strings.TrimSuffix(t.Title, filepath.Ext(t.Title))
+					ext := strings.ToLower(filepath.Ext(t.Title))
+
+					// 如果是WAV/FLAC文件且存在MP3版本，则跳过
+					if (ext == ".wav" || ext == ".flac") && mp3Titles[baseTitle] {
+						log.AsmrLog.Info(fmt.Sprintf("跳过 %s 因为存在 MP3 版本", t.Title))
+						continue
+					}
+
+					asmrClient.DownloadFile(t.MediaDownloadURL, currentPath, t.Title)
+				}
+			}
+		}
+		processFiles(tracks, path)
+	default:
+		// 默认行为，下载所有文件
+		for _, t := range tracks {
+			if t.Type != "folder" {
+				asmrClient.DownloadFile(t.MediaDownloadURL, path, t.Title)
+			} else {
+				asmrClient.EnsureFileDirsExist(t.Children, fmt.Sprintf("%s/%s", path, t.Title))
+			}
 		}
 	}
 }

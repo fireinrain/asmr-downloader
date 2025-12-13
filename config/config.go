@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -49,27 +50,46 @@ func GetAsmrLatestUrls() ([]string, error) {
 	req, _ := http.NewRequest("GET", officialPublishSite, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36")
 	resp, err := client.Do(req)
-	if err != nil || resp.StatusCode != 200 {
-		log.AsmrLog.Info("尝试访问asmr.one最新站点发布页as.mr失败: ", zap.String("error", err.Error()))
+
+	if err != nil || resp == nil || resp.StatusCode != 200 {
+		errMsg := "连接超时"
+		if err != nil {
+			errMsg = err.Error()
+		}
+		log.AsmrLog.Info("尝试访问asmr.one最新站点发布页as.mr失败: ", zap.String("error", errMsg))
 		log.AsmrLog.Info("当前使用as.131433.xyz代理访问最新站点发布页")
 		latestPublishSite = cfProxyPublishSite
+		utils.Client.Put(client)
+		if resp != nil && resp.Body != nil {
+			resp.Body.Close()
+		}
 	} else {
 		log.AsmrLog.Info("当前使用as.mr访问最新站点发布页...")
 		latestPublishSite = officialPublishSite
+		utils.Client.Put(client)
+		resp.Body.Close()
 	}
-	utils.Client.Put(client)
-	defer resp.Body.Close()
 
 	client = utils.Client.Get().(*http.Client)
 	req, _ = http.NewRequest("GET", latestPublishSite, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36")
 	resp, err = client.Do(req)
-	if err != nil || resp.StatusCode != 200 {
-		log.AsmrLog.Error("访问asmr.one最新域名发布页出现错误: ", zap.String("error", err.Error()))
-		return nil, err
+	if err != nil || resp == nil || resp.StatusCode != 200 {
+		errMsg := "连接超时"
+		if err != nil {
+			errMsg = err.Error()
+		}
+		log.AsmrLog.Error("访问asmr.one最新域名发布页出现错误: ", zap.String("error", errMsg))
+		utils.Client.Put(client)
+		if resp != nil && resp.Body != nil {
+			resp.Body.Close()
+		}
+		return nil, fmt.Errorf("无法访问发布页: %s", errMsg)
 	}
-	utils.Client.Put(client)
+
 	defer resp.Body.Close()
+	utils.Client.Put(client)
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.AsmrLog.Error("Error reading response body:", zap.String("error", err.Error()))
@@ -131,10 +151,17 @@ func GetAsmrLatestUrls() ([]string, error) {
 func GetRespFastestSiteUrl() string {
 	latestUrls, err := GetAsmrLatestUrls()
 	if err != nil {
-		log.AsmrLog.Error("获取最新域名列表失败: ", zap.String("error", err.Error()))
+		log.AsmrLog.Error("获取最新域名列表失败，使用默认API地址: ", zap.String("error", err.Error()))
 		//as the default
 		return "https://api.asmr.one"
 	}
+
+	// 如果没有获取到任何URL，返回默认值
+	if len(latestUrls) == 0 {
+		log.AsmrLog.Error("未获取到任何有效域名，使用默认API地址")
+		return "https://api.asmr.one"
+	}
+
 	var wg sync.WaitGroup
 	ch := make(chan string, len(latestUrls))
 
@@ -172,21 +199,26 @@ func GetRespFastestSiteUrl() string {
 //	Config
 //	@Description: 配置结构体
 type Config struct {
-	Account   string `json:"account"`
-	Password  string `json:"password"`
-	MaxWorker int    `json:"max_worker"`
+	//账号
+	Account string `json:"account"`
+	//密码
+	Password string `json:"password"`
+	//最大并发数
+	MaxWorker int `json:"max_worker"`
 	//批量下载次数
 	BatchTaskCount int `json:"batch_task_count"`
-	//批量下载完后休息多少秒(防止服务器ban你)
+	//批量下载间隔
 	BatchSleepTime int `json:"batch_sleep_time"`
-	//是否自动执行 下一个批次
+	//是否自动执行下一批次下载
 	AutoForNextBatch bool `json:"auto_for_next_batch"`
 	//下载目录
 	DownloadDir string `json:"download_dir"`
-	//元数据库
+	//元数据数据库
 	MetaDataDb string `json:"meta_data_db"`
-	//最大重试次数
+	//最大失败重试次数
 	MaxFailedRetry int `json:"max_failed_retry"`
+	// 下载类型: "prioritizemp3" - 优先下载MP3文件(如果存在同名的WAV/FLAC则跳过)，"all" - 下载所有文件
+	DownloadType string `json:"download_type"`
 }
 
 // SafePrintInfoStr
@@ -205,6 +237,7 @@ func (receiver *Config) SafePrintInfoStr() string {
 		DownloadDir:      receiver.DownloadDir,
 		MetaDataDb:       receiver.MetaDataDb,
 		MaxFailedRetry:   receiver.MaxFailedRetry,
+		DownloadType:     receiver.DownloadType,
 	}
 	marshal, err := json.Marshal(config)
 	if err != nil {
@@ -227,6 +260,7 @@ func generateDefaultConfig() {
 		DownloadDir:      "data",
 		MetaDataDb:       "asmr.db",
 		MaxFailedRetry:   3,
+		DownloadType:     "all",
 	}
 
 	//提示用户输入用户名
@@ -285,6 +319,21 @@ func generateDefaultConfig() {
 		}
 	}
 	customConfig.DownloadDir = dowwnloadDir
+
+	downloadTypePrompt := "请选择下载类型:\n1. 优先下载MP3文件(如果存在同名的WAV/FLAC则跳过)\n2. 下载所有文件(包括MP3、WAV和FLAC)\n请输入选项(1-2，默认为1): "
+	downloadTypeStr := utils.PromotForInput(downloadTypePrompt, "1")
+	downloadTypeInt, err := strconv.Atoi(downloadTypeStr)
+	if err != nil || downloadTypeInt < 1 || downloadTypeInt > 2 {
+		log.AsmrLog.Info("输入选项无效，使用默认选项1")
+		downloadTypeInt = 1
+	}
+
+	switch downloadTypeInt {
+	case 1:
+		customConfig.DownloadType = "prioritizemp3"
+	case 2:
+		customConfig.DownloadType = "all"
+	}
 
 	config, err := json.Marshal(customConfig)
 	if err != nil {
