@@ -32,12 +32,13 @@ import (
 type EngineManager struct {
 	DB *gorm.DB
 	//SyncLimiter *SmartLimiter // 专门用于同步列表
-	DownLimiter *SmartLimiter // 专门用于下载文件
-	Config      *model.Config
-	WorkerPool  *pond.Pool
-	Client      *resty.Client
-	JWTToken    string
-	ApiUrl      string
+	DownLimiter  *SmartLimiter // 专门用于下载文件
+	Config       *model.Config
+	WorkerPool   *pond.Pool
+	DownloadPool *pond.Pool
+	Client       *resty.Client
+	JWTToken     string
+	ApiUrl       string
 	//批量通道  在元数据初始化的时候
 	MetadataWorkBatchChan chan []model.MetadataWork
 	//标记是否开启  条件db中有数据了
@@ -79,6 +80,7 @@ func NewEngineManager() *EngineManager {
 	//并发
 	workers := config.Downloader.MaxWorkers
 	pool := pond.NewPool(workers)
+	downloadPool := pond.NewPool(workers)
 	//2个并发刚好
 	syncPool := pond.NewPool(2)
 
@@ -101,11 +103,12 @@ func NewEngineManager() *EngineManager {
 		// 下载限流器：较慢，因为下载是大动作 2s 一个
 		DownLimiter: NewSmartLimiter(0.5, 1, 200, 400),
 		//配置
-		Config:     config,
-		WorkerPool: &pool,
-		Client:     client,
-		JWTToken:   "",
-		ApiUrl:     apiUrl,
+		Config:       config,
+		WorkerPool:   &pool,
+		DownloadPool: &downloadPool,
+		Client:       client,
+		JWTToken:     "",
+		ApiUrl:       apiUrl,
 		//批量通道  在元数据初始化的时候  队列2也刚好 不会触发429
 		MetadataWorkBatchChan: make(chan []model.MetadataWork, 50),
 		//后续增量使用的通道
@@ -276,7 +279,7 @@ func (m *EngineManager) DownloadOne(id string, storeBaseDir string) error {
 	//过滤掉不需要的格式
 	needDownloadUrls = m.filterTargetAudioFormate(needDownloadUrls)
 	//并行下载
-	pool := *m.WorkerPool
+	pool := *m.DownloadPool
 	group := pool.NewGroup()
 	for _, url := range needDownloadUrls {
 		//log.Println("Download file:", url[2])
