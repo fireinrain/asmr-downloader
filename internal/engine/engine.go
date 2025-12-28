@@ -15,112 +15,80 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alitto/pond/v2"
 	"github.com/go-resty/resty/v2"
 	"golang.org/x/net/proxy"
-	_ "golang.org/x/net/proxy"
-	"gorm.io/gorm/clause"
-
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-// EngineManager 下载器
+// EngineManager 下载器管理结构
 type EngineManager struct {
-	DB *gorm.DB
-	//SyncLimiter *SmartLimiter // 专门用于同步列表
-	DownLimiter  *SmartLimiter // 专门用于下载文件
-	Config       *model.Config
-	WorkerPool   *pond.Pool
-	DownloadPool *pond.Pool
-	Client       *resty.Client
-	JWTToken     string
-	ApiUrl       string
-	//批量通道  在元数据初始化的时候
+	DB                    *gorm.DB
+	DownLimiter           *SmartLimiter
+	Config                *model.Config
+	WorkerPool            *pond.Pool
+	DownloadPool          *pond.Pool
+	Client                *resty.Client
+	JWTToken              string
+	ApiUrl                string
 	MetadataWorkBatchChan chan []model.MetadataWork
-	//标记是否开启  条件db中有数据了
-	//MetadataWorkBatchMode bool
-	SyncWorkerPool *pond.Pool
+	SyncWorkerPool        *pond.Pool
 }
 
 var defaultHeaders = map[string]string{
-	"accept":             "application/json, text/plain, */*",
-	"accept-encoding":    "gzip",
-	"accept-language":    "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
-	"cache-control":      "no-cache",
-	"content-type":       "application/json",
-	"origin":             "https://asmr.one",
-	"pragma":             "no-cache",
-	"priority":           "u=1, i",
-	"referer":            "https://asmr.one/",
-	"sec-ch-ua":          `"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"`,
-	"sec-ch-ua-mobile":   "?0",
-	"sec-ch-ua-platform": `"macOS"`,
-	"sec-fetch-dest":     "empty",
-	"sec-fetch-mode":     "cors",
-	"sec-fetch-site":     "cross-site",
-	"user-agent":         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+	"accept":          "application/json, text/plain, */*",
+	"accept-encoding": "gzip",
+	"accept-language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
+	"cache-control":   "no-cache",
+	"content-type":    "application/json",
+	"origin":          "https://asmr.one",
+	"pragma":          "no-cache",
+	"referer":         "https://asmr.one/",
+	"user-agent":      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
 }
 
-// 在初始化 EngineManager 时读取配置
-func NewEngineManager() *EngineManager {
+// NewEngineManager 构造函数，增加 error 返回以符合 Go 惯例
+func NewEngineManager() (*EngineManager, error) {
 	config := model.AppConfig
-	//limit := config.Limit
-	//downloadJitterMax := limit.DownloadJitterMax
-	//downloadQPS := limit.DownloadQPS
-	//downloadJitterMin := limit.DownloadJitterMin
-	//syncJitterMax := limit.SyncJitterMax
-	//syncQPS := limit.SyncQPS
-	//syncJitterMin := limit.SyncJitterMin
-	// 读取 Viper 配置...
+	if config == nil {
+		return nil, errors.New("application config is not initialized")
+	}
 
-	//并发
 	workers := config.Downloader.MaxWorkers
 	pool := pond.NewPool(workers)
-	downloadPool := pond.NewPool(workers)
-	//2个并发刚好
+	downloadPool := pond.NewPool(workers + 1)
 	syncPool := pond.NewPool(2)
 
-	//上下文
-	//ctx, cancel := context.WithCancel(context.Background())
-
-	//resty配置
 	client, err := buildRestyClient(config)
 	if err != nil {
-		fmt.Printf("build resty client failed: %v", err)
-		return nil
+		return nil, fmt.Errorf("failed to build resty client: %w", err)
 	}
-	//获取api地址
+
 	apiUrl := GetRespFastestSiteUrl()
 
 	engine := &EngineManager{
-		DB: database.Database,
-		// 同步限流器：较快 1s 2个
-		//SyncLimiter: NewSmartLimiter(1, 1, 100, 300),
-		// 下载限流器：较慢，因为下载是大动作 2s 一个
-		DownLimiter: NewSmartLimiter(0.5, 1, 200, 400),
-		//配置
-		Config:       config,
-		WorkerPool:   &pool,
-		DownloadPool: &downloadPool,
-		Client:       client,
-		JWTToken:     "",
-		ApiUrl:       apiUrl,
-		//批量通道  在元数据初始化的时候  队列2也刚好 不会触发429
-		MetadataWorkBatchChan: make(chan []model.MetadataWork, 50),
-		//后续增量使用的通道
-		//标记是否开启  条件db中有数据了
-		//MetadataWorkBatchMode: true,
-		SyncWorkerPool: &syncPool,
+		DB:                    database.Database,
+		DownLimiter:           NewSmartLimiter(0.5, 1, 200, 400),
+		Config:                config,
+		WorkerPool:            &pool,
+		DownloadPool:          &downloadPool,
+		Client:                client,
+		ApiUrl:                apiUrl,
+		MetadataWorkBatchChan: make(chan []model.MetadataWork, 100), // 适当增大缓冲
+		SyncWorkerPool:        &syncPool,
 	}
-	//默认登录
-	engine.AuthLogin()
-	//检测需要使用batch channel
-	//engine.CheckIfMetadataWorkBatchMode()
-	return engine
+
+	// 默认初始化登录（使用默认背景 Context）
+	if err := engine.AuthLogin(context.Background()); err != nil {
+		log.Printf("Warning: Initial login failed: %v", err)
+	}
+
+	return engine, nil
 }
 
 func buildRestyClient(config *model.Config) (*resty.Client, error) {
@@ -186,7 +154,7 @@ func buildRestyClient(config *model.Config) (*resty.Client, error) {
 //}
 
 // AuthLogin 登录获取JWT Token
-func (m *EngineManager) AuthLogin() error {
+func (m *EngineManager) AuthLogin(ctx context.Context) error {
 	headers := defaultHeaders
 	user := struct {
 		Name     string `json:"name"`
@@ -198,6 +166,7 @@ func (m *EngineManager) AuthLogin() error {
 	result := make(map[string]interface{})
 
 	response, err2 := m.Client.R().
+		SetContext(ctx).
 		SetHeaders(headers).
 		SetResult(&result).
 		SetBody(&user).
@@ -220,27 +189,27 @@ func (m *EngineManager) AuthLogin() error {
 }
 
 // SimpleDownload 简单下载 可传入RJId 或者RJID列表
-func (m *EngineManager) SimpleDownload(ids []string, storeBaseDir string) error {
+func (m *EngineManager) SimpleDownload(ctx context.Context, ids []string, storeBaseDir string) error {
 	pool := *m.WorkerPool
 	group := pool.NewGroup()
 	for _, id := range ids {
 		// 提交任务到 Worker Pool
 		group.SubmitErr(func() error {
-			return m.DownloadOne(id, storeBaseDir)
+			return m.DownloadOne(ctx, id, storeBaseDir)
 		})
 	}
 	err := group.Wait()
 	return err
 }
 
-func (m *EngineManager) DownloadOne(id string, storeBaseDir string) error {
+func (m *EngineManager) DownloadOne(ctx context.Context, id string, storeBaseDir string) error {
 	//检查是否是合格的id
 	valid, prefix, number, err := utils.IsValidDlsiteID(id)
 	if err != nil || !valid {
 		return err
 	}
 	//获取作品信息
-	workInfo, err := m.GetWorkInfo(number)
+	workInfo, err := m.GetWorkInfo(ctx, number)
 	if err != nil {
 		return err
 	}
@@ -268,6 +237,10 @@ func (m *EngineManager) DownloadOne(id string, storeBaseDir string) error {
 		//修正标题 移除目录不支持的特殊字符
 		utils.NormalDirPathStr(strings.ReplaceAll(workInfo.Title, "/", "")),
 	)
+	defer func() {
+		//递归的移除空目录
+		utils.RemoveEmptyDirs(folderName)
+	}()
 	//正式多协程下载 到目录RJID-date-title
 	log.Println("Download folderName:", folderName)
 	//根据配置需求下载tracks  比如只要mp3格式的
@@ -289,8 +262,7 @@ func (m *EngineManager) DownloadOne(id string, storeBaseDir string) error {
 		})
 	}
 	err = group.Wait()
-	//递归的移除空目录
-	utils.RemoveEmptyDirs(folderName)
+
 	return err
 }
 
@@ -403,13 +375,14 @@ func (m *EngineManager) GetVoiceTracks(id string) ([]model.Track, error) {
 	return result, nil
 }
 
-func (m *EngineManager) GetWorkInfo(id string) (model.WorkInfo, error) {
+func (m *EngineManager) GetWorkInfo(ctx context.Context, id string) (model.WorkInfo, error) {
 	url := m.ApiUrl + consts.AsmrApiPath.WorkinfoPath + id
 	headers := defaultHeaders
 
 	var result = model.WorkInfo{}
 
 	resp, err := m.Client.R().
+		SetContext(ctx).
 		SetHeader("Authorization", m.JWTToken).
 		SetHeaders(headers).
 		SetResult(&result).
@@ -425,7 +398,7 @@ func (m *EngineManager) GetWorkInfo(id string) (model.WorkInfo, error) {
 	return result, nil
 }
 
-func (m *EngineManager) SyncMetadata() error {
+func (m *EngineManager) SyncMetadata(ctx context.Context) error {
 	url := m.ApiUrl + consts.AsmrApiPath.SyncMetaPath
 
 	allPageFuture := m.fetchMetaDataRespFuture(url)
@@ -463,7 +436,11 @@ func (m *EngineManager) SyncMetadata() error {
 	// 请求阶段
 	pool := *m.SyncWorkerPool
 	//先启动存储 防止存储没有被goroutine来执行
+	var wg sync.WaitGroup
+	// ...
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		m.storeSyncMetadata(len(urls))
 	}()
 
@@ -505,6 +482,7 @@ func (m *EngineManager) SyncMetadata() error {
 	//	time.Sleep(1 * time.Second)
 	//}
 	close(m.MetadataWorkBatchChan)
+	wg.Wait()
 	close(retryMetadataWorkChan)
 	return nil
 }
@@ -634,13 +612,14 @@ func (m *EngineManager) downloadFile(url string, path string, fileName string) e
 	return nil
 }
 
-func (m *EngineManager) SearchForCountResult(asmrOneQueryStr string, count int) (model.SearchResult, error) {
+func (m *EngineManager) SearchForCountResult(ctx context.Context, asmrOneQueryStr string, count int) (model.SearchResult, error) {
 	url := m.ApiUrl + consts.AsmrApiPath.SearchPath + asmrOneQueryStr
 	headers := defaultHeaders
 
 	var result = model.SearchResult{}
 
 	resp, err := m.Client.R().
+		SetContext(ctx).
 		SetHeader("Authorization", m.JWTToken).
 		SetHeaders(headers).
 		SetResult(&result).
@@ -693,7 +672,7 @@ func (m *EngineManager) SearchForCountResult(asmrOneQueryStr string, count int) 
 	return result, nil
 }
 
-func (m *EngineManager) DownloadBatchMedias(works []model.SearchResultView, storePathDir string) error {
+func (m *EngineManager) DownloadBatchMedias(ctx context.Context, works []model.SearchResultView, storePathDir string) error {
 	var ids []string
 	for _, work := range works {
 		id := work.SourceID
@@ -704,7 +683,7 @@ func (m *EngineManager) DownloadBatchMedias(works []model.SearchResultView, stor
 	for _, id := range ids {
 		// 提交任务到 Worker Pool
 		group.SubmitErr(func() error {
-			return m.DownloadOne(id, storePathDir)
+			return m.DownloadOne(ctx, id, storePathDir)
 		})
 	}
 	err := group.Wait()
@@ -715,20 +694,17 @@ func (m *EngineManager) DownloadBatchMedias(works []model.SearchResultView, stor
 	return nil
 }
 
-func (m *EngineManager) DownloadMediaByBatchIds(worksId []string, storePathDir string) error {
+func (m *EngineManager) DownloadMediaByBatchIds(ctx context.Context, worksId []string, storePathDir string) error {
 	if len(worksId) <= 0 {
 		return nil
 	}
-	//使用限流器下载
-	ctx := context.Background()
-
 	for _, id := range worksId {
 		// 等待令牌
 		if err := m.DownLimiter.Wait(ctx); err != nil {
 			log.Println("等待下载限流器令牌失败: ", err.Error())
 			return err
 		}
-		err := m.DownloadOne(id, storePathDir)
+		err := m.DownloadOne(ctx, id, storePathDir)
 		//err := func() error {
 		//	log.Println("正在下载作品: ", id)
 		//	time.Sleep(5 * time.Second)
@@ -788,7 +764,7 @@ func (m *EngineManager) printSyncMetadataStatics(result *model.MetadataWorkRespo
 }
 
 // 按照指定数量下载热门100作品
-func (m *EngineManager) DownloadHot100(count int, dir string) error {
+func (m *EngineManager) DownloadHot100(ctx context.Context, count int, dir string) error {
 	url := m.ApiUrl + consts.AsmrApiPath.HotPath
 	headers := defaultHeaders
 
@@ -804,6 +780,7 @@ func (m *EngineManager) DownloadHot100(count int, dir string) error {
 
 	resp, err := m.Client.R().
 		SetHeader("Authorization", m.JWTToken).
+		SetContext(ctx).
 		SetBody(body).
 		SetHeaders(headers).
 		SetResult(&result).
@@ -828,7 +805,7 @@ func (m *EngineManager) DownloadHot100(count int, dir string) error {
 		sourceIds = append(sourceIds, work.SourceID)
 	}
 	// 下载热门100作品
-	err = m.DownloadMediaByBatchIds(sourceIds, dir)
+	err = m.DownloadMediaByBatchIds(ctx, sourceIds, dir)
 	if err != nil {
 		log.Println("下载热门100作品失败: ", err.Error())
 		return err

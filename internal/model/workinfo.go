@@ -70,7 +70,7 @@ type WorkInfo struct {
 		ParentWorkno            string        `json:"parent_workno"`
 		OriginalWorkno          string        `json:"original_workno"`
 		IsTranslationAgree      bool          `json:"is_translation_agree"`
-		TranslationBonusLangs   []interface{} `json:"translation_bonus_langs"`
+		TranslationBonusLangs   interface{}   `json:"translation_bonus_langs"`
 		IsTranslationBonusChild bool          `json:"is_translation_bonus_child"`
 		//TranslationStatusForTranslator [string]interface{} `json:"translation_status_for_translator"`
 	} `json:"translation_info"`

@@ -5,6 +5,7 @@ import (
 	"asmroner/internal/engine"
 	"asmroner/internal/model"
 	"asmroner/internal/utils"
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -70,8 +71,12 @@ sync 命令用于同步资源元数据，并管理文件下载、失败重试及
 }
 
 func doSyncMetadata() error {
-	engineManager := engine.NewEngineManager()
-	return engineManager.SyncMetadata()
+	engineManager, err := engine.NewEngineManager()
+	if err != nil {
+		log.Fatalf("❌创建下载引擎管理器失败: %v\n", err)
+	}
+	ctx := context.Background()
+	return engineManager.SyncMetadata(ctx)
 }
 
 // ------------------------- download 子命令 -------------------------
@@ -237,7 +242,11 @@ func doBatchSyncDownload(downDir string, batchSize int, batchCount int, download
 	var wg sync.WaitGroup
 
 	// 启动下载工作池
-	manager := engine.NewEngineManager()
+	manager, err := engine.NewEngineManager()
+	if err != nil {
+		log.Fatalf("❌创建下载引擎管理器失败: %v\n", err)
+	}
+	ctx := context.Background()
 	workerCount := batchSize // 可配置的工作线程数
 	for i := 0; i < workerCount; i++ {
 		wg.Add(1)
@@ -253,7 +262,7 @@ func doBatchSyncDownload(downDir string, batchSize int, batchCount int, download
 					log.Printf("🚀 开始下载作品: %s", syncInfo.SourceId)
 					// 这里应该调用实际的下载函数
 					// 模拟下载延迟
-					downError := manager.DownloadOne(syncInfo.SourceId, downDir)
+					downError := manager.DownloadOne(ctx, syncInfo.SourceId, downDir)
 					if downError != nil {
 						log.Printf("❌ 下载作品 %s 失败: %v", syncInfo.SourceId, downError)
 						syncInfo.Status = "FAILED"
@@ -494,8 +503,12 @@ func doSyncFailedDownload(db *gorm.DB, info model.WorkSyncInfo) error {
 	if err != nil {
 		return err
 	}
-	manager := engine.NewEngineManager()
-	err = manager.DownloadOne(info.SourceId, filepath.Dir(info.FilePath))
+	manager, err := engine.NewEngineManager()
+	if err != nil {
+		log.Fatalf("❌创建下载引擎管理器失败: %v\n", err)
+	}
+	ctx := context.Background()
+	err = manager.DownloadOne(ctx, info.SourceId, filepath.Dir(info.FilePath))
 	if err != nil {
 		return err
 	}

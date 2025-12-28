@@ -59,7 +59,7 @@ type SearchResult struct {
 			ParentWorkno            interface{}   `json:"parent_workno"`
 			OriginalWorkno          interface{}   `json:"original_workno"`
 			IsTranslationAgree      bool          `json:"is_translation_agree"`
-			TranslationBonusLangs   []interface{} `json:"translation_bonus_langs"`
+			TranslationBonusLangs   interface{}   `json:"translation_bonus_langs"`
 			IsTranslationBonusChild bool          `json:"is_translation_bonus_child"`
 		} `json:"translation_info"`
 		WorkAttributes    string      `json:"work_attributes"`

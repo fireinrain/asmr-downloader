@@ -4,6 +4,7 @@ import (
 	"asmroner/internal/engine"
 	"asmroner/internal/model"
 	"asmroner/internal/utils"
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -97,9 +98,13 @@ func doSearchTask(keyword string, count int) {
 		return
 	}
 
-	engineManager := engine.NewEngineManager()
+	engineManager, err := engine.NewEngineManager()
+	if err != nil {
+		log.Fatalf("❌创建下载引擎管理器失败: %v\n", err)
+	}
+	ctx := context.Background()
 
-	result, err := engineManager.SearchForCountResult(asmrOneQueryStr, count)
+	result, err := engineManager.SearchForCountResult(ctx, asmrOneQueryStr, count)
 	if err != nil {
 		log.Printf("❌ 搜索失败：%v\n", err)
 		return
@@ -218,8 +223,13 @@ func doSearchDownload(keyword string, downloadDir string, count int) {
 		return
 	}
 
-	engineManager := engine.NewEngineManager()
-	result, err := engineManager.SearchForCountResult(asmrOneQueryStr, count)
+	engineManager, err := engine.NewEngineManager()
+	if err != nil {
+		log.Fatalf("❌创建下载引擎管理器失败: %v\n", err)
+	}
+	ctx := context.Background()
+
+	result, err := engineManager.SearchForCountResult(ctx, asmrOneQueryStr, count)
 
 	if err != nil {
 		log.Printf("❌ 搜索失败：%v\n", err)
@@ -230,7 +240,7 @@ func doSearchDownload(keyword string, downloadDir string, count int) {
 
 	log.Printf("📥 搜索到 %d 条，开始批量下载...\n", len(views))
 
-	engineManager.DownloadBatchMedias(views, downloadDir)
+	engineManager.DownloadBatchMedias(ctx, views, downloadDir)
 
 	log.Println("✅ 下载完成！")
 }
@@ -301,8 +311,13 @@ func doSearchExport(keyword string) {
 		return
 	}
 
-	engineManager := engine.NewEngineManager()
-	result, err := engineManager.SearchForCountResult(asmrOneQueryStr, exportCount)
+	engineManager, err := engine.NewEngineManager()
+	if err != nil {
+		log.Fatalf("❌创建下载引擎管理器失败: %v\n", err)
+	}
+	ctx := context.Background()
+
+	result, err := engineManager.SearchForCountResult(ctx, asmrOneQueryStr, exportCount)
 
 	if err != nil {
 		log.Printf("❌ 搜索失败：%v\n", err)

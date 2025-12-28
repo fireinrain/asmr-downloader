@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"asmroner/internal/engine"
+	"context"
 	"log"
 	"os"
 	"path/filepath"
@@ -61,7 +62,11 @@ download 命令用于下载音声资源，支持单个 RJID、多项 RJID 批量
 		if err := os.MkdirAll(hotDownloadDir, os.ModePerm); err != nil {
 			log.Fatalf("❌创建下载目录失败: %v\n", err)
 		}
-		engineManager := engine.NewEngineManager()
+		engineManager, err := engine.NewEngineManager()
+		if err != nil {
+			log.Fatalf("❌创建下载引擎管理器失败: %v\n", err)
+		}
+		ctx := context.Background()
 
 		// ------------------------------------
 		// 模式 1：下载热门 hot
@@ -73,7 +78,7 @@ download 命令用于下载音声资源，支持单个 RJID、多项 RJID 批量
 			}
 			log.Printf("🔥 正在下载 %d 个热门作品到目录：%s\n", hotCount, hotDownloadDir)
 
-			err := engineManager.DownloadHot100(hotCount, hotDownloadDir)
+			err := engineManager.DownloadHot100(ctx, hotCount, hotDownloadDir)
 			if err != nil {
 				log.Printf("❌热门作品下载失败: %v\n", err)
 				return
@@ -89,7 +94,7 @@ download 命令用于下载音声资源，支持单个 RJID、多项 RJID 批量
 		log.Printf("📥 正在下载以下资源：%v\n", rjIds)
 		log.Printf("📂 保存路径：%s\n", hotDownloadDir)
 
-		err := engineManager.SimpleDownload(rjIds, hotDownloadDir)
+		err = engineManager.SimpleDownload(ctx, rjIds, hotDownloadDir)
 		if err != nil {
 			log.Printf("❌资源下载失败: %v\n", err)
 			return
