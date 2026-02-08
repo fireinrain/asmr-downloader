@@ -25,3 +25,7 @@ go.work.sum
 # env file
 .env
 
+# Built binary files & runtime files
+asmroner
+asmroner.exe
+.asmroner-data

@@ -161,7 +161,7 @@ func promptFloat(reader *bufio.Reader, text string, def float64) float64 {
 
 // ------------------------- 写入配置文件 -------------------------
 func writeConfig(configFile string) {
-	viper.SetConfigName(consts.ConfigFileName[:len("config")])
+	viper.SetConfigName("config")
 	viper.SetConfigType("toml")
 	viper.AddConfigPath(consts.MetaDataDir)
 

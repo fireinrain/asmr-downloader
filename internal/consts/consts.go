@@ -2,16 +2,16 @@ package consts
 
 import "regexp"
 
-// ASMROnerDataDir 元数据目录
+// MetaDataDir 元数据存储目录
 const MetaDataDir = ".asmroner-data"
 
-// 配置文件名
+// ConfigFileName 配置文件名
 const ConfigFileName = "config.toml"
 
-// 数据库名
+// DbName 数据库文件名
 const DbName = "asmroner.db"
 
-// 下载错误日志
+// FailedLogName 下载错误日志文件名
 const FailedLogName = "download_errors.log"
 
 // asmr.one id类型
@@ -25,7 +25,8 @@ var UserAgents = []string{
 	"Mozilla/5.0 (Linux; Android 5.0; SM-G900P Build/LRX21T) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/48.0.4893.1163 Mobile Safari/537.36 (Android device)",
 }
 
-var AsmrBaseApiUrl = "https://api.asmr-300.com"
+// AsmrBaseApiUrl 默认 API 地址
+const AsmrBaseApiUrl = "https://api.asmr-300.com"
 
 // AsmrApiPath 一些接口路径
 var AsmrApiPath = struct {

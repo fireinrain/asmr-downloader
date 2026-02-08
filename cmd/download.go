@@ -55,13 +55,11 @@ download 命令用于下载音声资源，支持单个 RJID、多项 RJID 批量
 	Run: func(cmd *cobra.Command, args []string) {
 		keyword := args[0]
 
-		// 解析保存路径
-
 		hotDownloadDir, _ = filepath.Abs(hotDownloadDir)
 
-		// 创建目录
 		if err := os.MkdirAll(hotDownloadDir, os.ModePerm); err != nil {
-			log.Fatalf("❌创建下载目录失败: %v\n", err)
+			log.Printf("❌创建下载目录失败: %v\n", err)
+			return
 		}
 		engineManager, err := engine.NewEngineManager(
 			model.AppConfig.Limit.DownloadQPS, 1,
@@ -69,7 +67,8 @@ download 命令用于下载音声资源，支持单个 RJID、多项 RJID 批量
 			model.AppConfig.Limit.DownloadJitterMax,
 		)
 		if err != nil {
-			log.Fatalf("❌创建下载引擎管理器失败: %v\n", err)
+			log.Printf("❌创建下载引擎管理器失败: %v\n", err)
+			return
 		}
 		ctx := context.Background()
 

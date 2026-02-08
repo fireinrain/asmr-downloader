@@ -10,11 +10,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -77,7 +75,7 @@ func doSyncMetadata() error {
 		model.AppConfig.Limit.SyncJitterMax,
 	)
 	if err != nil {
-		log.Fatalf("❌创建下载引擎管理器失败: %v\n", err)
+		return fmt.Errorf("创建下载引擎管理器失败: %w", err)
 	}
 	ctx := context.Background()
 	return engineManager.SyncMetadata(ctx)
@@ -162,34 +160,29 @@ func doBatchSyncDownload(downDir string, batchSize int, batchCount int, download
 		log.Println("❌ 查询metadata_works失败:", result.Error)
 		return
 	}
-	// 如果没有需要同步的作品,则直接返回
 	if needSyncCount == 0 {
 		log.Println("✅ 没有需要同步下载的新作品")
 		return
 	}
-	batchCounts := int(math.Ceil(float64(needSyncCount) / float64(batchSize)))
-	log.Printf("📥 找到 %d 个需要同步下载的作品,共需要 %d 批次下载", needSyncCount, batchCounts)
-	// 1. 查询五条metadata_work,并且id不在 work_sync_infos 表中的数据
+	log.Printf("📥 找到 %d 个需要同步下载的作品", needSyncCount)
+
+	// 查询一批待下载的作品
 	var metadataWorks []model.MetadataWork
 	result = db.Table("metadata_works").
 		Where("id NOT IN (SELECT metadata_work_id FROM work_sync_infos)").
 		Limit(batchSize).
 		Find(&metadataWorks)
-
 	if result.Error != nil {
 		log.Println("❌ 查询metadata_works失败:", result.Error)
 		return
 	}
-
 	if len(metadataWorks) == 0 {
 		log.Println("✅ 没有需要同步下载的新作品")
 		return
 	}
 	log.Printf("🔨 正在执行第 %d 次批量(%d)下载...\n", batchCount, batchSize)
 
-	log.Printf("📥 找到 %d 个需要同步的新作品", len(metadataWorks))
-
-	// 2. 插入到work_sync_infos 表中,并初始化下载状态
+	// 构建 WorkSyncInfo 记录
 	var workSyncInfos []model.WorkSyncInfo
 	for _, work := range metadataWorks {
 		valid, prefix, number, err := utils.IsValidDlsiteID(work.SourceID)
@@ -201,14 +194,12 @@ func doBatchSyncDownload(downDir string, batchSize int, batchCount int, download
 		if work.HasSubtitle {
 			hasSubtitle = "sub"
 		}
-		//新建下载目录名
 		folderName := fmt.Sprintf(
 			"%s%s-%s-%s-%s",
 			strings.ToUpper(prefix),
 			number,
 			strings.ReplaceAll(work.Release, "-", ""),
 			hasSubtitle,
-			//修正标题 移除目录不支持的特殊字符
 			utils.NormalDirPathStr(strings.ReplaceAll(work.Title, "/", "")),
 		)
 
@@ -220,8 +211,6 @@ func doBatchSyncDownload(downDir string, batchSize int, batchCount int, download
 			Status:         "PENDING",
 			FilePath:       filepath.Join(downDir, folderName),
 			UpdatedAt:      time.Now(),
-			FailReason:     "",
-			RetryCount:     0,
 		}
 		workSyncInfos = append(workSyncInfos, workSyncInfo)
 	}
@@ -232,186 +221,70 @@ func doBatchSyncDownload(downDir string, batchSize int, batchCount int, download
 		return
 	}
 
-	// 在函数内部添加以下修改：
-
-	// 3. 循环发送数据到下载chan
-	// 创建下载通道和结果通道
-	downloadChan := make(chan model.WorkSyncInfo, len(workSyncInfos))
-	resultChan := make(chan struct {
-		SyncInfo model.WorkSyncInfo
-		Error    error
-		Size     int64
-	}, len(workSyncInfos))
-	cancelChan := make(chan struct{})
-	var wg sync.WaitGroup
-
-	// 启动下载工作池
+	// 创建下载引擎
 	manager, err := engine.NewEngineManager(
 		model.AppConfig.Limit.DownloadQPS, 1,
 		model.AppConfig.Limit.DownloadJitterMin,
 		model.AppConfig.Limit.DownloadJitterMax,
 	)
 	if err != nil {
-		log.Fatalf("❌创建下载引擎管理器失败: %v\n", err)
+		log.Printf("❌创建下载引擎管理器失败: %v\n", err)
+		return
 	}
 	ctx := context.Background()
-	workerCount := batchSize // 可配置的工作线程数
-	for i := 0; i < workerCount; i++ {
-		wg.Add(1)
-		go func(downDir string) {
-			defer wg.Done()
-			for {
-				select {
-				case syncInfo, ok := <-downloadChan:
-					if !ok {
-						return
-					}
 
-					log.Printf("🚀 开始下载作品: %s", syncInfo.SourceId)
-					// 这里应该调用实际的下载函数
-					// 模拟下载延迟
-					downError := manager.DownloadOne(ctx, syncInfo.SourceId, downDir)
-					if downError != nil {
-						log.Printf("❌ 下载作品 %s 失败: %v", syncInfo.SourceId, downError)
-						syncInfo.Status = "FAILED"
-						syncInfo.FailReason = downError.Error()
-						syncInfo.FailedAt = time.Now()
-						continue
-					} else {
-						syncInfo.Status = "COMPLETED"
-						//计算下载完成的目录的大小
-						size, err := utils.GetDirSize(syncInfo.FilePath)
-						if err != nil {
-							log.Printf("❌ 计算目录大小失败: %v", err)
-							// 注意：这里不再使用continue，而是设置一个默认值
-							syncInfo.DirSize = 0
-						}
-						syncInfo.DirSize = size
-					}
-					// 模拟下载结果
-					//time.Sleep(1 * time.Second)
-					//var err error
-					//var size int64 = 1024 * 1024 // 模拟1MB大小
-					//
-					//if rand.Intn(10) < 2 { // 20%失败概率
-					//	err = fmt.Errorf("模拟下载失败")
-					//	syncInfo.Status = "FAILED"
-					//	syncInfo.FailReason = err.Error()
-					//	syncInfo.FailedAt = time.Now()
-					//} else {
-					//	syncInfo.Status = "COMPLETED"
-					//	syncInfo.DirSize = size
-					//}
-					syncInfo.UpdatedAt = time.Now()
+	// 逐个下载，检查大小限制
+	for i := range workSyncInfos {
+		info := &workSyncInfos[i]
 
-					// 发送结果前检查cancelChan是否已关闭
-					select {
-					case <-cancelChan:
-						return
-					case resultChan <- struct {
-						SyncInfo model.WorkSyncInfo
-						Error    error
-						Size     int64
-					}{syncInfo, downError, syncInfo.DirSize}:
-						// 结果发送成功
-					}
-				case <-cancelChan:
-					return
-				}
+		log.Printf("🚀 开始下载作品: %s", info.SourceId)
+		downErr := manager.DownloadOne(ctx, info.SourceId, downDir)
+
+		if downErr != nil {
+			log.Printf("❌ 下载作品 %s 失败: %v", info.SourceId, downErr)
+			info.Status = "FAILED"
+			info.FailReason = downErr.Error()
+			info.FailedAt = time.Now()
+		} else {
+			info.Status = "COMPLETED"
+			size, sizeErr := utils.GetDirSize(info.FilePath)
+			if sizeErr != nil {
+				log.Printf("⚠️ 计算目录大小失败: %v", sizeErr)
 			}
-		}(downDir)
-	}
-
-	// 将工作发送到下载通道
-	for _, syncInfo := range workSyncInfos {
-		downloadChan <- syncInfo
-	}
-
-	// 关闭downloadChan，表示所有工作已经发送完毕
-	close(downloadChan)
-
-	// 4. 下载chan 下载完 推送 result channel
-	// 5. 从result chan 读取数据并更新work_sync_infos 表中的status
-	var totalDownloadedSize int64 = 0
-	var maxSize = downloadLimitSize
-	var needCancel bool
-
-	doneCount := 0
-	for doneCount < len(workSyncInfos) && !needCancel {
-		result := <-resultChan
-		doneCount++
+			info.DirSize = size
+			log.Printf("✅ 作品 %s 下载完成, 大小: %d bytes", info.SourceId, size)
+		}
+		info.UpdatedAt = time.Now()
 
 		// 更新数据库状态
 		updateResult := db.Model(&model.WorkSyncInfo{}).
-			Where("metadata_work_id = ?", result.SyncInfo.MetadataWorkId).
+			Where("metadata_work_id = ?", info.MetadataWorkId).
 			Updates(map[string]interface{}{
-				"status":       result.SyncInfo.Status,
-				"dir_size":     result.SyncInfo.DirSize,
-				"updated_at":   result.SyncInfo.UpdatedAt,
-				"fail_reason":  result.SyncInfo.FailReason,
-				"retry_count":  result.SyncInfo.RetryCount,
-				"failed_at":    result.SyncInfo.FailedAt,
-				"has_subtitle": result.SyncInfo.HasSubtitle,
+				"status":       info.Status,
+				"dir_size":     info.DirSize,
+				"updated_at":   info.UpdatedAt,
+				"fail_reason":  info.FailReason,
+				"retry_count":  info.RetryCount,
+				"failed_at":    info.FailedAt,
+				"has_subtitle": info.HasSubtitle,
 			})
-
 		if updateResult.Error != nil {
-			log.Printf("❌ 更新work_sync_infos失败(作品ID: %d): %v", result.SyncInfo.MetadataWorkId, updateResult.Error)
-		} else {
-			if result.SyncInfo.Status == "COMPLETED" {
-				totalDownloadedSize += result.Size
-				log.Printf("✅ 作品ID: %d 下载完成, 大小: %d bytes", result.SyncInfo.MetadataWorkId, result.Size)
-			} else {
-				log.Printf("❌ 作品ID: %d 下载失败: %v", result.SyncInfo.MetadataWorkId, result.Error)
-			}
+			log.Printf("❌ 更新work_sync_infos失败(作品ID: %d): %v", info.MetadataWorkId, updateResult.Error)
 		}
 
-		// 6. 当下载完的总数据大小 等于配置文件的设定值 取消所有下载任务
-		if totalDownloadedSize >= maxSize {
-			log.Printf("📦 已达到下载目标大小 (%d bytes), 取消剩余下载任务", totalDownloadedSize)
-			close(cancelChan)
-			needCancel = true
-			// 不立即关闭resultChan，而是等待正在处理的任务完成
+		// 检查是否超过大小限制
+		needSync, _, checkErr := checkIfNeedSyncDownload(db, downloadLimitSize)
+		if checkErr != nil {
+			log.Printf("❌ 检查下载限制失败: %v", checkErr)
+			break
+		}
+		if !needSync {
+			log.Printf("📦 已达到下载目标大小限制, 停止剩余下载任务")
+			break
 		}
 	}
 
-	// 等待所有工作池goroutine完成
-	go func() {
-		wg.Wait()
-		close(resultChan)
-	}()
-
-	// 继续处理剩余的结果
-	for result := range resultChan {
-		if !needCancel { // 只有在未取消的情况下才更新计数
-			doneCount++
-		}
-
-		// 更新数据库状态
-		updateResult := db.Model(&model.WorkSyncInfo{}).
-			Where("metadata_work_id = ?", result.SyncInfo.MetadataWorkId).
-			Updates(map[string]interface{}{
-				"status":       result.SyncInfo.Status,
-				"dir_size":     result.SyncInfo.DirSize,
-				"updated_at":   result.SyncInfo.UpdatedAt,
-				"fail_reason":  result.SyncInfo.FailReason,
-				"retry_count":  result.SyncInfo.RetryCount,
-				"failed_at":    result.SyncInfo.FailedAt,
-				"has_subtitle": result.SyncInfo.HasSubtitle,
-			})
-
-		if updateResult.Error != nil {
-			log.Printf("❌ 更新work_sync_infos失败(作品ID: %d): %v", result.SyncInfo.MetadataWorkId, updateResult.Error)
-		} else {
-			if result.SyncInfo.Status == "COMPLETED" && !needCancel {
-				totalDownloadedSize += result.Size
-				log.Printf("✅ 作品ID: %d 下载完成, 大小: %d bytes", result.SyncInfo.MetadataWorkId, result.Size)
-			} else {
-				log.Printf("❌ 作品ID: %d 下载失败: %v", result.SyncInfo.MetadataWorkId, result.Error)
-			}
-		}
-	}
-	// done标签不再需要
-	log.Printf("✅ 单次批量同步下载完成, 下载大小: %d bytes", totalDownloadedSize)
+	log.Println("✅ 单次批量同步下载完成")
 }
 
 func cleanSyncDownPendingData(db *gorm.DB) {
@@ -479,7 +352,6 @@ sync retry 子命令用于重试指定目录下下载失败的文件。
 			log.Println("❌ 数据库连接未初始化")
 			return
 		}
-		// 3. 查询所有在work_sync_infos 表中的status 为 FAILED 的作品目录数据
 		var failedSyncInfos []model.WorkSyncInfo
 		tx := db.Table("work_sync_infos").Where("status = ?", "FAILED").Find(&failedSyncInfos)
 		if tx.Error != nil {
@@ -491,10 +363,21 @@ sync retry 子命令用于重试指定目录下下载失败的文件。
 			return
 		}
 		log.Printf("❌ 有 %d 个文件需要重试下载", len(failedSyncInfos))
+
+		// 只创建一个 EngineManager，复用
+		manager, err := engine.NewEngineManager(
+			model.AppConfig.Limit.DownloadQPS, 1,
+			model.AppConfig.Limit.DownloadJitterMin,
+			model.AppConfig.Limit.DownloadJitterMax,
+		)
+		if err != nil {
+			log.Printf("❌创建下载引擎管理器失败: %v\n", err)
+			return
+		}
+
 		for _, info := range failedSyncInfos {
-			// 4. 重试下载该目录下的所有文件
 			log.Printf("🔄 重试下载作品 %s", info.SourceId)
-			err := doSyncFailedDownload(db, info)
+			err := doSyncFailedDownload(db, manager, info)
 			if err != nil {
 				log.Printf("❌ 重试下载作品 %s 失败: %v", info.SourceId, err)
 			}
@@ -503,34 +386,21 @@ sync retry 子命令用于重试指定目录下下载失败的文件。
 	},
 }
 
-func doSyncFailedDownload(db *gorm.DB, info model.WorkSyncInfo) error {
-	err := os.RemoveAll(info.FilePath)
-	if err != nil {
-		return err
-	}
-	manager, err := engine.NewEngineManager(
-		model.AppConfig.Limit.DownloadQPS, 1,
-		model.AppConfig.Limit.DownloadJitterMin,
-		model.AppConfig.Limit.DownloadJitterMax,
-	)
-	if err != nil {
-		log.Fatalf("❌创建下载引擎管理器失败: %v\n", err)
+func doSyncFailedDownload(db *gorm.DB, manager *engine.EngineManager, info model.WorkSyncInfo) error {
+	if err := os.RemoveAll(info.FilePath); err != nil {
+		return fmt.Errorf("删除旧目录失败: %w", err)
 	}
 	ctx := context.Background()
-	err = manager.DownloadOne(ctx, info.SourceId, filepath.Dir(info.FilePath))
+	err := manager.DownloadOne(ctx, info.SourceId, filepath.Dir(info.FilePath))
 	if err != nil {
 		return err
 	}
-	// 更新数据库状态为 COMPLETED
 	info.Status = "COMPLETED"
 	info.FailReason = ""
 	info.RetryCount++
-	info.FailedAt = time.Now()
+	info.UpdatedAt = time.Now()
 	tx := db.Table("work_sync_infos").Where("id = ?", info.ID).Updates(info)
-	if tx.Error != nil {
-		return tx.Error
-	}
-	return nil
+	return tx.Error
 }
 
 // ------------------------- export 子命令 -------------------------

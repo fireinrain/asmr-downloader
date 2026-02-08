@@ -66,7 +66,7 @@ asmroner 是一个基于Go的多功能命令行工，提供以下功能：
 		}
 
 		viper.AddConfigPath(consts.MetaDataDir)
-		viper.SetConfigName(consts.ConfigFileName[:6])
+		viper.SetConfigName("config")
 		viper.SetConfigType("toml")
 
 		if err := viper.ReadInConfig(); err != nil {

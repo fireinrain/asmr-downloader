@@ -112,17 +112,16 @@ listen 命令用于启动一个 Web UI 服务器，用于展示和播放下载�
 			pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
 
 			infos, total, err := getFolderInfoPage(db, page, pageSize, folderName)
-			pageData := gin.H{
-				"infos":    infos,
-				"total":    total,
-				"page":     page,
-				"pageSize": pageSize,
-			}
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, wrapResponse(err))
 				return
 			}
-			c.JSON(http.StatusOK, wrapResponse(pageData))
+			c.JSON(http.StatusOK, wrapResponse(gin.H{
+				"infos":    infos,
+				"total":    total,
+				"page":     page,
+				"pageSize": pageSize,
+			}))
 		})
 
 		addr := fmt.Sprintf(":%d", port)
@@ -307,9 +306,9 @@ func getFolderInfoPage(db *gorm.DB, page, pageSize int, baseDir string) ([]Folde
 }
 
 type ResultResp struct {
-	Code int         `json:"code"`
-	Msg  string      `json:"msg"`
-	Data interface{} `json:"data"`
+	Code int    `json:"code"`
+	Msg  string `json:"msg"`
+	Data any    `json:"data"`
 }
 
 // 包装resp

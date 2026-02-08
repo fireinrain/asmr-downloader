@@ -1,8 +1,10 @@
 package logger
 
 import (
+	"asmroner/internal/consts"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -14,8 +16,8 @@ var (
 
 func InitErrorLogger() {
 	var err error
-	// 以追加模式打开，如果没有则创建
-	errorLogFile, err = os.OpenFile("download_errors.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	logPath := filepath.Join(consts.MetaDataDir, consts.FailedLogName)
+	errorLogFile, err = os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Fatal(err)
 	}

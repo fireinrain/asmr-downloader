@@ -104,7 +104,8 @@ func doSearchTask(keyword string, count int) {
 		model.AppConfig.Limit.SyncJitterMax,
 	)
 	if err != nil {
-		log.Fatalf("❌创建下载引擎管理器失败: %v\n", err)
+		log.Printf("❌创建下载引擎管理器失败: %v\n", err)
+		return
 	}
 	ctx := context.Background()
 
@@ -233,7 +234,8 @@ func doSearchDownload(keyword string, downloadDir string, count int) {
 		model.AppConfig.Limit.DownloadJitterMax,
 	)
 	if err != nil {
-		log.Fatalf("❌创建下载引擎管理器失败: %v\n", err)
+		log.Printf("❌创建下载引擎管理器失败: %v\n", err)
+		return
 	}
 	ctx := context.Background()
 
@@ -325,7 +327,8 @@ func doSearchExport(keyword string) {
 		model.AppConfig.Limit.SyncJitterMax,
 	)
 	if err != nil {
-		log.Fatalf("❌创建下载引擎管理器失败: %v\n", err)
+		log.Printf("❌创建下载引擎管理器失败: %v\n", err)
+		return
 	}
 	ctx := context.Background()
 
