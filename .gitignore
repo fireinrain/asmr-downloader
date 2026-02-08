@@ -29,3 +29,6 @@ go.work.sum
 asmroner
 asmroner.exe
 .asmroner-data
+
+# MacOS system files
+.DS_Store
