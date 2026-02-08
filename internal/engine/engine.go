@@ -7,9 +7,9 @@ import (
 	"asmroner/internal/model"
 	"asmroner/internal/utils"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -80,7 +80,7 @@ func NewEngineManager(r float64, burst int, minMs int, maxMs int) (*EngineManage
 
 	// 默认初始化登录
 	if err := engine.AuthLogin(context.Background()); err != nil {
-		log.Printf("Warning: Initial login failed: %v", err)
+		logger.Warn("初始登录失败: %v", err)
 	}
 
 	return engine, nil
@@ -94,6 +94,20 @@ func buildRestyClient(config *model.Config) (*resty.Client, error) {
 	if strings.Contains(proxyStr, "http") || strings.Contains(proxyStr, "https") {
 		r.SetProxy(proxyStr)
 	}
+	// 如果没有使用代理，配置默认 Transport 以优化连接稳定性
+	if proxyStr == "" {
+		r.SetTransport(&http.Transport{
+			TLSClientConfig: &tls.Config{
+				MinVersion: tls.VersionTLS12,
+			},
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   10,
+			IdleConnTimeout:       90 * time.Second,
+			ResponseHeaderTimeout: 30 * time.Second,
+			ForceAttemptHTTP2:     true,
+		})
+	}
+
 	//socks5://user123:pass456@112.123.45.67:8080
 	if strings.Contains(proxyStr, "socks5") {
 		if strings.Contains(proxyStr, "@") {
@@ -193,7 +207,7 @@ func (m *EngineManager) SimpleDownload(ctx context.Context, ids []string, storeB
 		}
 		group.SubmitErr(func() error {
 			if err := m.DownloadOne(ctx, id, storeBaseDir); err != nil {
-				log.Printf("下载 %s 失败: %v", id, err)
+				logger.Fail("下载 %s 失败: %s", id, logger.SummarizeError(err))
 				return err
 			}
 			return nil
@@ -207,18 +221,26 @@ func (m *EngineManager) DownloadOne(ctx context.Context, id string, storeBaseDir
 	if err != nil || !valid {
 		return err
 	}
-	//获取作品信息
+
+	task := logger.NewTask(id)
+
+	// 获取作品信息
+	task.Info("正在获取作品信息...")
 	workInfo, err := m.GetWorkInfo(ctx, number)
 	if err != nil {
+		task.Error("获取作品信息失败: %s", logger.SummarizeError(err))
 		return err
 	}
-	log.Printf("Get WorkInfo  %s...\n", workInfo.Title)
-	//获取所有的tracks
+	task.Info("作品: %s", workInfo.Title)
+
+	// 获取所有的 tracks
 	tracks, err := m.GetVoiceTracks(number)
 	if err != nil {
+		task.Error("获取音轨列表失败: %s", logger.SummarizeError(err))
 		return err
 	}
-	log.Printf("Get TracksInfo list,size: %d...\n", len(tracks))
+	task.Info("音轨数: %d", len(tracks))
+
 	hasSubtitle := ""
 	if workInfo.HasSubtitle {
 		hasSubtitle = "sub"
@@ -226,22 +248,20 @@ func (m *EngineManager) DownloadOne(ctx context.Context, id string, storeBaseDir
 		hasSubtitle = "nosub"
 	}
 
-	//新建下载目录名
+	// 新建下载目录名
 	folderName := fmt.Sprintf(
 		"%s%s-%s-%s-%s",
 		strings.ToUpper(prefix),
 		number,
 		strings.ReplaceAll(workInfo.Release, "-", ""),
 		hasSubtitle,
-		//修正标题 移除目录不支持的特殊字符
 		utils.NormalDirPathStr(strings.ReplaceAll(workInfo.Title, "/", "")),
 	)
 	storeFileDir := filepath.Join(storeBaseDir, folderName)
 	defer func() {
-		// 递归移除空目录
 		utils.RemoveEmptyDirs(storeFileDir)
 	}()
-	log.Println("Download folderName:", folderName)
+	task.Info("目标目录: %s", folderName)
 	needDownloadUrls, err := m.ensureDirExists(tracks, storeFileDir)
 	if err != nil {
 		return err
@@ -362,11 +382,11 @@ func (m *EngineManager) GetVoiceTracks(id string) ([]model.Track, error) {
 		Get(url)
 
 	if err != nil {
-		log.Println("获取音轨信息失败: ", err.Error())
+		logger.Error("获取音轨信息失败: %s", logger.SummarizeError(err))
 		return nil, err
 	}
 	if !resp.IsSuccess() {
-		return nil, errors.New("Request error, status code: " + strconv.Itoa(resp.StatusCode()))
+		return nil, fmt.Errorf("获取音轨信息HTTP错误, 状态码: %d", resp.StatusCode())
 	}
 	return result, nil
 }
@@ -385,11 +405,11 @@ func (m *EngineManager) GetWorkInfo(ctx context.Context, id string) (model.WorkI
 		Get(url)
 
 	if err != nil {
-		log.Println("获取作品信息失败: ", err.Error())
+		logger.Error("获取作品信息失败: %s", logger.SummarizeError(err))
 		return result, err
 	}
 	if !resp.IsSuccess() {
-		return result, errors.New("Request error, status code: " + strconv.Itoa(resp.StatusCode()))
+		return result, fmt.Errorf("获取作品信息HTTP错误, 状态码: %d", resp.StatusCode())
 	}
 	return result, nil
 }
@@ -409,11 +429,11 @@ func (m *EngineManager) SyncMetadata(ctx context.Context) error {
 
 	siteAll, localAll := m.printSyncMetadataStatics(allPageResult, allSubPageResult)
 	if siteAll == localAll {
-		log.Println("✅ 网页数据与本地数据一致,无需同步")
+		logger.Done("网页数据与本地数据一致，无需同步")
 		return nil
 	}
 	if siteAll < localAll {
-		log.Println("本地数据存在逻辑错误,请检查数据库是否存在重复数据")
+		logger.Warn("本地数据存在逻辑错误，请检查数据库是否存在重复数据")
 	}
 	if siteAll > localAll {
 		confirm := utils.PromptConfirm("网页数据有更新,是否进行同步操作?")
@@ -442,7 +462,7 @@ func (m *EngineManager) SyncMetadata(ctx context.Context) error {
 			// Retry with backoff
 			for attempt := 0; attempt <= maxRetries; attempt++ {
 				if attempt > 0 {
-					log.Printf("重试获取分页元数据 (第%d次): %s", attempt, pageURL)
+					logger.DownloadRetry(attempt, maxRetries, pageURL, fetchErr)
 					time.Sleep(time.Duration(attempt*5) * time.Second)
 				}
 				resp, fetchErr = m.fetchMetaDataResp(pageURL)
@@ -467,15 +487,14 @@ func (m *EngineManager) SyncMetadata(ctx context.Context) error {
 
 			mu.Lock()
 			savedCount++
-			log.Printf("已保存批次数: %d 总批次: %d 进度: %.2f%%\n",
-				savedCount, totalBatches, float64(savedCount)/float64(totalBatches)*100)
+			logger.Progress(savedCount, totalBatches, "同步元数据")
 			mu.Unlock()
 			return nil
 		})
 	}
 
 	if err := group.Wait(); err != nil {
-		log.Printf("⚠️ 同步元数据过程中出现错误: %v", err)
+		logger.Warn("同步元数据过程中出现错误: %v", err)
 		return err
 	}
 
@@ -498,13 +517,12 @@ func (m *EngineManager) fetchMetaDataResp(url string) (*model.MetadataWorkRespon
 		SetResult(&result).
 		Get(url)
 	if err != nil {
-		log.Println("获取元数据首页信息失败: ", err.Error())
+		logger.Error("获取元数据信息失败: %s", logger.SummarizeError(err))
 		return nil, err
 	}
 	if !resp.IsSuccess() {
-		//log.Println("获取元数据首页信息失败: ", resp.String())
-		log.Println("Cloudflare 429 响应状态: ", resp.StatusCode())
-		return nil, errors.New("cloudflare 429 Too Many Requests")
+		logger.Warn("API 请求被拒绝, HTTP 状态码: %d", resp.StatusCode())
+		return nil, fmt.Errorf("HTTP %d: 请求被服务器拒绝 (可能触发了速率限制)", resp.StatusCode())
 	}
 	return &result, nil
 }
@@ -529,22 +547,75 @@ func (m *EngineManager) buildMetaDataWorkUrls(totalCount int, pageSize int) []st
 }
 
 func (m *EngineManager) downloadFile(url string, path string, fileName string) error {
-	// 使用 resty 或 http.Get 下载文件
-	var filePathToStore = path
-	var fileUrl = url
-	var storePath = filepath.Join(filePathToStore, fileName)
-	//使用 resty 下载文件
-	resp, err := m.Client.R().
-		SetOutput(storePath).
-		Get(fileUrl)
-	if err != nil {
-		log.Println("下载文件失败: ", err.Error())
-		return err
+	storePath := filepath.Join(path, fileName)
+	maxRetries := m.Config.Downloader.MaxRetries
+	if maxRetries <= 0 {
+		maxRetries = 3
 	}
-	if !resp.IsSuccess() {
-		return errors.New("Request error, status code: " + strconv.Itoa(resp.StatusCode()))
+
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			logger.DownloadRetry(attempt, maxRetries, fileName, lastErr)
+			// 指数退避: 2s, 4s, 8s...
+			backoff := time.Duration(1<<uint(attempt)) * time.Second
+			time.Sleep(backoff)
+			// 清理可能的残留文件
+			os.Remove(storePath)
+		}
+
+		logger.Debug("下载文件: %s", fileName)
+		resp, err := m.Client.R().
+			SetOutput(storePath).
+			Get(url)
+		if err != nil {
+			lastErr = err
+			// 仅对可重试的网络错误进行重试
+			if isRetryableError(err) {
+				continue
+			}
+			logger.Error("下载文件 %s 失败 (不可重试): %s", fileName, logger.SummarizeError(err))
+			return err
+		}
+		if !resp.IsSuccess() {
+			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode())
+			if resp.StatusCode() >= 500 || resp.StatusCode() == 429 {
+				continue // 服务端错误或限流，可重试
+			}
+			logger.Error("下载文件 %s 失败, HTTP 状态码: %d", fileName, resp.StatusCode())
+			return lastErr
+		}
+		return nil // 成功
 	}
-	return nil
+
+	logger.Error("下载文件 %s 最终失败 (已重试 %d 次): %s", fileName, maxRetries, logger.SummarizeError(lastErr))
+	return fmt.Errorf("下载 %s 失败 (重试 %d 次后): %w", fileName, maxRetries, lastErr)
+}
+
+// isRetryableError 判断错误是否可以重试
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	retryablePatterns := []string{
+		"stream error",
+		"INTERNAL_ERROR",
+		"connection reset",
+		"broken pipe",
+		"EOF",
+		"unexpected EOF",
+		"i/o timeout",
+		"TLS handshake timeout",
+		"connection refused",
+		"no such host",
+	}
+	for _, pattern := range retryablePatterns {
+		if strings.Contains(msg, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *EngineManager) SearchForCountResult(ctx context.Context, asmrOneQueryStr string, count int) (model.SearchResult, error) {
@@ -561,11 +632,11 @@ func (m *EngineManager) SearchForCountResult(ctx context.Context, asmrOneQuerySt
 		Get(url)
 
 	if err != nil {
-		log.Println("查询关键字信息失败: ", err.Error())
+		logger.Error("查询关键字信息失败: %s", logger.SummarizeError(err))
 		return result, err
 	}
 	if !resp.IsSuccess() {
-		return result, errors.New("Request error, status code: " + strconv.Itoa(resp.StatusCode()))
+		return result, fmt.Errorf("搜索请求HTTP错误, 状态码: %d", resp.StatusCode())
 	}
 	// 如果结果比较少
 	if result.Pagination.TotalCount > count && count < result.Pagination.PageSize {
@@ -593,11 +664,11 @@ func (m *EngineManager) SearchForCountResult(ctx context.Context, asmrOneQuerySt
 				SetResult(&newResult).
 				Get(pageURL)
 			if err != nil {
-				log.Println("查询分页信息失败: ", err.Error())
+				logger.Error("查询分页信息失败: %s", logger.SummarizeError(err))
 				return newResult, err
 			}
 			if !resp.IsSuccess() {
-				return newResult, errors.New("Request error, status code: " + strconv.Itoa(resp.StatusCode()))
+				return newResult, fmt.Errorf("查询分页HTTP错误, 状态码: %d", resp.StatusCode())
 			}
 			// 合并结果
 			result.Works = append(result.Works, newResult.Works...)
@@ -616,7 +687,7 @@ func (m *EngineManager) DownloadBatchMedias(ctx context.Context, works []model.S
 		}
 		group.SubmitErr(func() error {
 			if err := m.DownloadOne(ctx, work.SourceID, storePathDir); err != nil {
-				log.Printf("下载 %s 失败: %v", work.SourceID, err)
+				logger.Fail("下载 %s 失败: %s", work.SourceID, logger.SummarizeError(err))
 				return err
 			}
 			return nil
@@ -634,7 +705,7 @@ func (m *EngineManager) DownloadMediaByBatchIds(ctx context.Context, worksId []s
 		}
 		group.SubmitErr(func() error {
 			if err := m.DownloadOne(ctx, id, storePathDir); err != nil {
-				log.Printf("下载作品 %s 失败: %v", id, err)
+				logger.Fail("下载作品 %s 失败: %s", id, logger.SummarizeError(err))
 				return err
 			}
 			return nil
@@ -661,8 +732,7 @@ func (m *EngineManager) printSyncMetadataStatics(result *model.MetadataWorkRespo
         COUNT(*) AS total_count,
         SUM(CASE WHEN has_subtitle = 1 THEN 1 ELSE 0 END) AS subtitle_true_count
     FROM metadata_works`).Scan(&localResult)
-	//打印一些统计信息
-	log.Printf("网站作品元数据数量(所有/带字幕): %d/%d\n",
+	logger.Info("网站作品元数据数量 (所有/带字幕): %d/%d",
 		result.Pagination.TotalCount, result2.Pagination.TotalCount)
 	var syncRateTotal, syncRateSubtitle float64
 
@@ -677,8 +747,8 @@ func (m *EngineManager) printSyncMetadataStatics(result *model.MetadataWorkRespo
 		syncRateSubtitle = 0.0
 	}
 
-	log.Printf(
-		"本地数据库中元数据数量(所有/带字幕): %d/%d, 同步率(总/字幕): %.2f%%/%.2f%%",
+	logger.Info(
+		"本地数据库中元数据数量 (所有/带字幕): %d/%d — 同步率 (总/字幕): %.2f%%/%.2f%%",
 		localResult.TotalCount,
 		localResult.SubtitleTrueCount,
 		syncRateTotal*100,
@@ -712,13 +782,13 @@ func (m *EngineManager) DownloadHot100(ctx context.Context, count int, dir strin
 		Post(url)
 
 	if err != nil {
-		log.Println("获取作品信息失败: ", err.Error())
-		logger.RecordFailure("DownloadHot100"+" ", url, err.Error())
+		logger.Error("获取热门作品列表失败: %s", logger.SummarizeError(err))
+		logger.RecordFailure("DownloadHot100", url, err.Error())
 		return err
 	}
 	if !resp.IsSuccess() {
-		logger.RecordFailure("DownloadHot100"+" ", url, resp.Status())
-		return errors.New("Request error, status code: " + strconv.Itoa(resp.StatusCode()))
+		logger.RecordFailure("DownloadHot100", url, resp.Status())
+		return fmt.Errorf("获取热门作品列表HTTP错误, 状态码: %d", resp.StatusCode())
 	}
 	if count <= 0 {
 		return errors.New("下载数量选择必须大于0")
@@ -732,7 +802,7 @@ func (m *EngineManager) DownloadHot100(ctx context.Context, count int, dir strin
 	// 下载热门100作品
 	err = m.DownloadMediaByBatchIds(ctx, sourceIds, dir)
 	if err != nil {
-		log.Println("下载热门100作品失败: ", err.Error())
+		logger.Fail("下载热门作品失败: %s", logger.SummarizeError(err))
 		return err
 	}
 	return nil

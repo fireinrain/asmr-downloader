@@ -3,13 +3,13 @@ package cmd
 import (
 	"asmroner/internal/database"
 	"asmroner/internal/engine"
+	"asmroner/internal/logger"
 	"asmroner/internal/model"
 	"asmroner/internal/utils"
 	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,11 +60,11 @@ sync 命令用于同步资源元数据，并管理文件下载、失败重试及
 	Run: func(cmd *cobra.Command, args []string) {
 		err := doSyncMetadata()
 		if err != nil {
-			log.Println("❌ 同步元数据失败:", err)
+			logger.Fail("同步元数据失败: %v", err)
 			return
 		}
 		time.Sleep(2 * time.Second)
-		log.Println("✅ 作品元数据同步完成")
+		logger.Done("作品元数据同步完成")
 	},
 }
 
@@ -99,37 +99,30 @@ sync download 子命令用于在同步元数据的同时下载文件。
 `,
 	Run: func(cmd *cobra.Command, args []string) {
 		if downloadFolder == "" {
-			//use default download folder
 			downloadFolder = model.AppConfig.Downloader.SyncDataFolder
 		}
-		// 同步元数据
 		err := doSyncMetadata()
 		if err != nil {
-			log.Println("❌ 同步元数据失败:", err)
+			logger.Fail("同步元数据失败: %v", err)
 			return
 		}
 		time.Sleep(2 * time.Second)
 		doSyncDownload(downloadFolder)
-		log.Println("✅ 文件已成功下载到", downloadFolder)
+		logger.Done("文件已成功下载到 %s", downloadFolder)
 	},
 }
 
 func doSyncDownload(dir string) {
-	//当所有在work_sync_infos 表中的status 为 SUCCESS 的作品目录数据总大小小于 配置文件的设定值 时,进行循环下载
-	// 获取数据库连接
 	db := database.Database
 	if db == nil {
-		log.Println("❌ 数据库连接未初始化")
+		logger.Fail("数据库连接未初始化")
 		return
 	}
-	//获取下载大小限制
 	downloadLimitSize, err := utils.FileSize2Byte(model.AppConfig.Downloader.SyncWantedSize)
 	if err != nil {
-		log.Println("❌ 解析SyncWantedSize失败:", err)
-		// 下载大小限制默认值为 1GB
+		logger.Warn("解析SyncWantedSize失败: %v，使用默认值 1GB", err)
 		downloadLimitSize = 1024 * 1024 * 1024
 	}
-	//移除所有status 为 Pending 的作品目录数据
 	cleanSyncDownPendingData(db)
 
 	var batchSize = 1
@@ -143,7 +136,8 @@ func doSyncDownload(dir string) {
 		if !needSync {
 			break
 		}
-		log.Printf("✅ 已下载的数据大小: %d byte, 下载限制: %d byte\n", hasDownSize, downloadLimitSize)
+		logger.Info("已下载: %s, 限制: %s",
+			utils.Byte2FileSize(hasDownSize), utils.Byte2FileSize(downloadLimitSize))
 		time.Sleep(3 * time.Second)
 		doBatchSyncDownload(dir, batchSize, batchCount, downloadLimitSize, db)
 		batchCount++
@@ -157,14 +151,14 @@ func doBatchSyncDownload(downDir string, batchSize int, batchCount int, download
 		Where("id NOT IN (SELECT metadata_work_id FROM work_sync_infos)").
 		Count(&needSyncCount)
 	if result.Error != nil {
-		log.Println("❌ 查询metadata_works失败:", result.Error)
+		logger.Fail("查询metadata_works失败: %v", result.Error)
 		return
 	}
 	if needSyncCount == 0 {
-		log.Println("✅ 没有需要同步下载的新作品")
+		logger.Done("没有需要同步下载的新作品")
 		return
 	}
-	log.Printf("📥 找到 %d 个需要同步下载的作品", needSyncCount)
+	logger.Info("找到 %d 个需要同步下载的作品", needSyncCount)
 
 	// 查询一批待下载的作品
 	var metadataWorks []model.MetadataWork
@@ -173,21 +167,21 @@ func doBatchSyncDownload(downDir string, batchSize int, batchCount int, download
 		Limit(batchSize).
 		Find(&metadataWorks)
 	if result.Error != nil {
-		log.Println("❌ 查询metadata_works失败:", result.Error)
+		logger.Fail("查询待下载作品失败: %v", result.Error)
 		return
 	}
 	if len(metadataWorks) == 0 {
-		log.Println("✅ 没有需要同步下载的新作品")
+		logger.Done("没有需要同步下载的新作品")
 		return
 	}
-	log.Printf("🔨 正在执行第 %d 次批量(%d)下载...\n", batchCount, batchSize)
+	logger.Step("正在执行第 %d 次批量(%d)下载...", batchCount, batchSize)
 
 	// 构建 WorkSyncInfo 记录
 	var workSyncInfos []model.WorkSyncInfo
 	for _, work := range metadataWorks {
 		valid, prefix, number, err := utils.IsValidDlsiteID(work.SourceID)
 		if err != nil || !valid {
-			log.Printf("❌ 无效的作品ID: %s, 跳过...\n", work.SourceID)
+			logger.Warn("无效的作品ID: %s，跳过...", work.SourceID)
 			continue
 		}
 		hasSubtitle := "nosub"
@@ -217,18 +211,17 @@ func doBatchSyncDownload(downDir string, batchSize int, batchCount int, download
 
 	result = db.Create(&workSyncInfos)
 	if result.Error != nil {
-		log.Println("❌ 插入work_sync_infos失败:", result.Error)
+		logger.Fail("插入work_sync_infos失败: %v", result.Error)
 		return
 	}
 
-	// 创建下载引擎
 	manager, err := engine.NewEngineManager(
 		model.AppConfig.Limit.DownloadQPS, 1,
 		model.AppConfig.Limit.DownloadJitterMin,
 		model.AppConfig.Limit.DownloadJitterMax,
 	)
 	if err != nil {
-		log.Printf("❌创建下载引擎管理器失败: %v\n", err)
+		logger.Fail("创建下载引擎管理器失败: %v", err)
 		return
 	}
 	ctx := context.Background()
@@ -239,15 +232,16 @@ func doBatchSyncDownload(downDir string, batchSize int, batchCount int, download
 
 		// 限速：在提交下载前等待令牌
 		if err := manager.DownLimiter.Wait(ctx); err != nil {
-			log.Printf("❌ 限流器等待失败: %v", err)
+			logger.Fail("限流器等待失败: %v", err)
 			break
 		}
 
-		log.Printf("🚀 开始下载作品: %s", info.SourceId)
+		task := logger.NewTask(info.SourceId)
+		task.Info("开始下载")
 		downErr := manager.DownloadOne(ctx, info.SourceId, downDir)
 
 		if downErr != nil {
-			log.Printf("❌ 下载作品 %s 失败: %v", info.SourceId, downErr)
+			task.Error("下载失败: %s", logger.SummarizeError(downErr))
 			info.Status = "FAILED"
 			info.FailReason = downErr.Error()
 			info.FailedAt = time.Now()
@@ -255,10 +249,10 @@ func doBatchSyncDownload(downDir string, batchSize int, batchCount int, download
 			info.Status = "COMPLETED"
 			size, sizeErr := utils.GetDirSize(info.FilePath)
 			if sizeErr != nil {
-				log.Printf("⚠️ 计算目录大小失败: %v", sizeErr)
+				task.Warn("计算目录大小失败: %v", sizeErr)
 			}
 			info.DirSize = size
-			log.Printf("✅ 作品 %s 下载完成, 大小: %d bytes", info.SourceId, size)
+			task.Info("下载完成, 大小: %s", utils.Byte2FileSize(size))
 		}
 		info.UpdatedAt = time.Now()
 
@@ -275,22 +269,21 @@ func doBatchSyncDownload(downDir string, batchSize int, batchCount int, download
 				"has_subtitle": info.HasSubtitle,
 			})
 		if updateResult.Error != nil {
-			log.Printf("❌ 更新work_sync_infos失败(作品ID: %d): %v", info.MetadataWorkId, updateResult.Error)
+			logger.Error("更新work_sync_infos失败 (作品ID: %d): %v", info.MetadataWorkId, updateResult.Error)
 		}
 
-		// 检查是否超过大小限制
 		needSync, _, checkErr := checkIfNeedSyncDownload(db, downloadLimitSize)
 		if checkErr != nil {
-			log.Printf("❌ 检查下载限制失败: %v", checkErr)
+			logger.Error("检查下载限制失败: %v", checkErr)
 			break
 		}
 		if !needSync {
-			log.Printf("📦 已达到下载目标大小限制, 停止剩余下载任务")
+			logger.Info("已达到下载目标大小限制，停止剩余下载任务")
 			break
 		}
 	}
 
-	log.Println("✅ 单次批量同步下载完成")
+	logger.Done("单次批量同步下载完成")
 }
 
 func cleanSyncDownPendingData(db *gorm.DB) {
@@ -298,19 +291,18 @@ func cleanSyncDownPendingData(db *gorm.DB) {
 	var pendingSyncInfos []model.WorkSyncInfo
 	tx := db.Table("work_sync_infos").Where("status = ?", "PENDING").Find(&pendingSyncInfos)
 	if tx.Error != nil {
-		log.Println("❌ 查询work_sync_infos失败:", tx.Error)
+		logger.Error("查询work_sync_infos失败: %v", tx.Error)
 		return
 	}
 	for _, info := range pendingSyncInfos {
 		err := os.RemoveAll(info.FilePath)
 		if err != nil {
-			log.Println("❌ 删除目录失败:", err)
+			logger.Warn("删除目录失败: %v", err)
 		}
 	}
-	//删除所有status 为 PENDING 的作品目录数据
 	t := db.Table("work_sync_infos").Where("status = ?", "PENDING").Delete(&model.WorkSyncInfo{})
 	if t.Error != nil {
-		log.Println("❌ 删除work_sync_infos失败:", t.Error)
+		logger.Error("删除work_sync_infos失败: %v", t.Error)
 		return
 	}
 }
@@ -323,12 +315,11 @@ func checkIfNeedSyncDownload(db *gorm.DB, downloadLimitSize int64) (bool, int64,
 		Scan(&totalSize)
 
 	if result.Error != nil {
-		log.Println("❌ 查询work_sync_infos失败:", result.Error)
+		logger.Error("查询work_sync_infos失败: %v", result.Error)
 		return false, totalSize, result.Error
 	}
-	// 2. 比较总大小与配置文件的设定值
 	if totalSize >= downloadLimitSize {
-		log.Println("✅ 已下载的数据大小已超过配置的设定值, 无需继续下载")
+		logger.Done("已下载的数据大小已超过配置的设定值，无需继续下载")
 		return false, totalSize, nil
 	}
 	return true, totalSize, nil
@@ -355,45 +346,44 @@ sync retry 子命令用于重试指定目录下下载失败的文件。
 		}
 		db := database.Database
 		if db == nil {
-			log.Println("❌ 数据库连接未初始化")
+			logger.Fail("数据库连接未初始化")
 			return
 		}
 		var failedSyncInfos []model.WorkSyncInfo
 		tx := db.Table("work_sync_infos").Where("status = ?", "FAILED").Find(&failedSyncInfos)
 		if tx.Error != nil {
-			log.Println("❌ 查询work_sync_infos失败:", tx.Error)
+			logger.Fail("查询work_sync_infos失败: %v", tx.Error)
 			return
 		}
 		if len(failedSyncInfos) == 0 {
-			log.Println("✅ 没有需要重试下载的文件")
+			logger.Done("没有需要重试下载的文件")
 			return
 		}
-		log.Printf("❌ 有 %d 个文件需要重试下载", len(failedSyncInfos))
+		logger.Info("有 %d 个文件需要重试下载", len(failedSyncInfos))
 
-		// 只创建一个 EngineManager，复用
 		manager, err := engine.NewEngineManager(
 			model.AppConfig.Limit.DownloadQPS, 1,
 			model.AppConfig.Limit.DownloadJitterMin,
 			model.AppConfig.Limit.DownloadJitterMax,
 		)
 		if err != nil {
-			log.Printf("❌创建下载引擎管理器失败: %v\n", err)
+			logger.Fail("创建下载引擎管理器失败: %v", err)
 			return
 		}
 
 		for _, info := range failedSyncInfos {
-			log.Printf("🔄 重试下载作品 %s", info.SourceId)
-			// 限速：在提交下载前等待令牌
+			task := logger.NewTask(info.SourceId)
+			task.Info("重试下载")
 			if err := manager.DownLimiter.Wait(context.Background()); err != nil {
-				log.Printf("❌ 限流器等待失败: %v", err)
+				logger.Fail("限流器等待失败: %v", err)
 				break
 			}
 			err := doSyncFailedDownload(db, manager, info)
 			if err != nil {
-				log.Printf("❌ 重试下载作品 %s 失败: %v", info.SourceId, err)
+				task.Error("重试下载失败: %s", logger.SummarizeError(err))
 			}
 		}
-		log.Println("✅ 重试下载完成，目录：", downloadFolder)
+		logger.Done("重试下载完成，目录: %s", downloadFolder)
 	},
 }
 
@@ -445,7 +435,7 @@ sync export 子命令用于将文件按状态导出为 CSV/JSON 文件，便于�
 		}
 		db := database.Database
 		if db == nil {
-			log.Println("❌ 数据库连接未初始化")
+			logger.Fail("数据库连接未初始化")
 			return
 		}
 		if syncExportFile == "" {
@@ -459,7 +449,7 @@ sync export 子命令用于将文件按状态导出为 CSV/JSON 文件，便于�
 			exportJSON(db, exportStatus, syncExportFile)
 		}
 
-		log.Printf("✅ 已导出 %s 记录到 %s\n", exportStatus, syncExportFile)
+		logger.Done("已导出 %s 记录到 %s", exportStatus, syncExportFile)
 	},
 }
 
@@ -472,18 +462,17 @@ func exportJSON(db *gorm.DB, status string, file string) {
 	var syncInfos []model.WorkSyncInfo
 	tx := db.Table("work_sync_infos").Where("status = ?", status).Find(&syncInfos)
 	if tx.Error != nil {
-		log.Println("❌ 查询work_sync_infos失败:", tx.Error)
+		logger.Fail("查询work_sync_infos失败: %v", tx.Error)
 		return
 	}
 	if len(syncInfos) == 0 {
-		log.Println("✅ 没有需要导出的作品文件记录")
+		logger.Done("没有需要导出的作品文件记录")
 		return
 	}
-	log.Printf("✅ 有 %d 个作品文件记录需要导出", len(syncInfos))
-	// 3. 导出为 JSON 文件
+	logger.Info("有 %d 个作品文件记录需要导出", len(syncInfos))
 	f, err := os.Create(file)
 	if err != nil {
-		log.Println("❌ 创建 JSON 文件失败:", err)
+		logger.Fail("创建 JSON 文件失败: %v", err)
 		return
 	}
 	defer f.Close()
@@ -491,11 +480,11 @@ func exportJSON(db *gorm.DB, status string, file string) {
 	encoder := json.NewEncoder(f)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(syncInfos); err != nil {
-		log.Println("❌ 写入 JSON 文件失败:", err)
+		logger.Fail("写入 JSON 文件失败: %v", err)
 		return
 	}
 
-	log.Printf("✅ 已成功导出 %d 条记录到 %s", len(syncInfos), file)
+	logger.Done("已成功导出 %d 条记录到 %s", len(syncInfos), file)
 }
 
 func exportCSV(db *gorm.DB, status string, file string) {
@@ -508,16 +497,14 @@ func exportCSV(db *gorm.DB, status string, file string) {
 	var syncInfos []model.WorkSyncInfo
 	tx := db.Table("work_sync_infos").Where("status = ?", status).Find(&syncInfos)
 	if tx.Error != nil {
-		log.Println("❌ 查询work_sync_infos失败:", tx.Error)
+		logger.Fail("查询work_sync_infos失败: %v", tx.Error)
 		return
 	}
 	if len(syncInfos) == 0 {
-		log.Println("✅ 没有需要导出的作品文件记录")
+		logger.Done("没有需要导出的作品文件记录")
 		return
 	}
-	log.Printf("✅ 有 %d 个作品文件记录需要导出", len(syncInfos))
-	// 2. 导出为 CSV 文件
-	// 2.1 定义 CSV 列头
+	logger.Info("有 %d 个作品文件记录需要导出", len(syncInfos))
 	headers := []string{
 		"ID", "MetadataWorkId", "SourceId", "DirSize", "Status", "FilePath", "UpdatedAt", "FailReason", "RetryCount", "FailedAt", "HasSubtitle",
 	}
@@ -541,7 +528,7 @@ func exportCSV(db *gorm.DB, status string, file string) {
 	// 2.3 写入 CSV 文件
 	f, err := os.Create(file)
 	if err != nil {
-		log.Println("❌ 创建 CSV 文件失败:", err)
+		logger.Fail("创建 CSV 文件失败: %v", err)
 		return
 	}
 	defer f.Close()
@@ -549,21 +536,19 @@ func exportCSV(db *gorm.DB, status string, file string) {
 	w := csv.NewWriter(f)
 	defer w.Flush()
 
-	// 写入列头
 	if err := w.Write(headers); err != nil {
-		log.Println("❌ 写入 CSV 列头失败:", err)
+		logger.Fail("写入 CSV 列头失败: %v", err)
 		return
 	}
 
-	// 写入数据行
 	for _, row := range rows {
 		if err := w.Write(row); err != nil {
-			log.Println("❌ 写入 CSV 数据行失败:", err)
+			logger.Fail("写入 CSV 数据行失败: %v", err)
 			return
 		}
 	}
 
-	log.Printf("✅ 已成功导出 %d 条记录到 %s", len(rows), file)
+	logger.Done("已成功导出 %d 条记录到 %s", len(rows), file)
 }
 
 var syncReportCmd = &cobra.Command{
@@ -579,11 +564,10 @@ sync report 子命令用于打印相关统计数据。
   - 查看相关统计数据
 `,
 	Run: func(cmd *cobra.Command, args []string) {
-		log.Println("✅ 相关统计数据如下：")
-		//打印统计信息 元数据总量  元数据中带字幕的数量 不带字幕的数量,合并成一个sql查询
+		logger.Step("相关统计数据如下:")
 		db := database.Database
 		if db == nil {
-			log.Println("❌ 数据库连接未初始化")
+			logger.Fail("数据库连接未初始化")
 			return
 		}
 		var total, withSubtitle, withoutSubtitle int64
@@ -591,11 +575,11 @@ sync report 子命令用于打印相关统计数据。
 			Select("COUNT(*) AS total, COUNT(CASE WHEN has_subtitle THEN 1 END) AS withSubtitle, COUNT(CASE WHEN NOT has_subtitle THEN 1 END) AS withoutSubtitle").
 			Row()
 		if tx.Err() != nil {
-			log.Println("❌ 查询metadata_works失败:", tx.Err())
+			logger.Fail("查询metadata_works失败: %v", tx.Err())
 			return
 		}
 		tx.Scan(&total, &withSubtitle, &withoutSubtitle)
-		log.Printf("✅ 元数据总量: %d, 带字幕数量: %d, 不带字幕数量: %d\n", total, withSubtitle, withoutSubtitle)
+		logger.Info("元数据总量: %d, 带字幕数量: %d, 不带字幕数量: %d", total, withSubtitle, withoutSubtitle)
 		//查询同步下载数量,总下载带字幕数量，总下载不带字幕数量,失败数量，等待下载数量
 		var syncDownloaded, syncFailed, syncPending, syncWithSubtitle, syncWithoutSubtitle int64
 		tx = db.Table("work_sync_infos").
@@ -607,18 +591,18 @@ sync report 子命令用于打印相关统计数据。
 				"COUNT(CASE WHEN work_sync_infos.status = 'COMPLETED' AND NOT metadata_works.has_subtitle THEN 1 END) AS syncWithoutSubtitle").
 			Row()
 		if tx.Err() != nil {
-			log.Println("❌ 查询work_sync_infos失败:", tx.Err())
+			logger.Fail("查询work_sync_infos失败: %v", tx.Err())
 			return
 		}
 		tx.Scan(&syncDownloaded, &syncFailed, &syncPending, &syncWithSubtitle, &syncWithoutSubtitle)
-		log.Printf("✅ 同步下载数量: %d, 带字幕数量: %d, 不带字幕数量: %d,失败数量: %d, 等待下载数量: %d\n", syncDownloaded, syncWithSubtitle, syncWithoutSubtitle, syncFailed, syncPending)
+		logger.Info("同步下载数量: %d, 带字幕: %d, 不带字幕: %d, 失败: %d, 等待: %d",
+			syncDownloaded, syncWithSubtitle, syncWithoutSubtitle, syncFailed, syncPending)
 
-		//计算同步进度
-		// 同步进度 = 已下载数量 / 总数量,包含总同步进度，带字幕进度，不带字幕进度
 		syncProgress := float64(syncDownloaded) / float64(total) * 100
 		syncWithSubtitleProgress := float64(syncWithSubtitle) / float64(withSubtitle) * 100
 		syncWithoutSubtitleProgress := float64(syncWithoutSubtitle) / float64(withoutSubtitle) * 100
-		log.Printf("✅ 同步进度: %.2f%%, 带字幕进度: %.2f%%, 不带字幕进度: %.2f%%\n", syncProgress, syncWithSubtitleProgress, syncWithoutSubtitleProgress)
+		logger.Info("同步进度: %.2f%%, 带字幕进度: %.2f%%, 不带字幕进度: %.2f%%",
+			syncProgress, syncWithSubtitleProgress, syncWithoutSubtitleProgress)
 
 	},
 }

@@ -13,7 +13,7 @@ import (
 func main() {
 	utils.EnsureDirExist(consts.MetaDataDir)
 
-	logger.InitErrorLogger()
+	logger.Init()
 	defer logger.Close()
 
 	cmd.RegisterCmd(&cobra.Command{

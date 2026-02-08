@@ -2,11 +2,11 @@ package cmd
 
 import (
 	"asmroner/internal/engine"
+	"asmroner/internal/logger"
 	"asmroner/internal/model"
 	"asmroner/internal/utils"
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"reflect"
 	"strings"
@@ -78,7 +78,7 @@ search 命令用于按 RJID 或查询字符串搜索资源，支持 asmr.one 的
 		keyword := args[0]
 		count := searchCount
 
-		log.Printf("🔍 开始搜索：关键字='%s'，条数=%d ...\n", keyword, count)
+		logger.Step("开始搜索: 关键字='%s', 条数=%d", keyword, count)
 		doSearchTask(keyword, count)
 	},
 }
@@ -88,13 +88,13 @@ func doSearchTask(keyword string, count int) {
 	queryParams := model.NewQueryParams(strings.TrimSpace(keyword))
 
 	if err := queryParams.ParseQueryStr(); err != nil {
-		log.Printf("❌ 解析查询字符串失败：%v\n", err)
+		logger.Fail("解析查询字符串失败: %v", err)
 		return
 	}
 
 	asmrOneQueryStr, err := queryParams.BuildAsmrOneQueryStr()
 	if err != nil {
-		log.Printf("❌ 构建 asmr.one 查询语法失败：%v\n", err)
+		logger.Fail("构建 asmr.one 查询语法失败: %v", err)
 		return
 	}
 
@@ -104,23 +104,23 @@ func doSearchTask(keyword string, count int) {
 		model.AppConfig.Limit.SyncJitterMax,
 	)
 	if err != nil {
-		log.Printf("❌创建下载引擎管理器失败: %v\n", err)
+		logger.Fail("创建下载引擎管理器失败: %v", err)
 		return
 	}
 	ctx := context.Background()
 
 	result, err := engineManager.SearchForCountResult(ctx, asmrOneQueryStr, count)
 	if err != nil {
-		log.Printf("❌ 搜索失败：%v\n", err)
+		logger.Fail("搜索失败: %s", logger.SummarizeError(err))
 		return
 	}
 
-	log.Printf("📊 搜索完毕，共找到 %d 条数据\n", result.Pagination.TotalCount)
+	logger.Info("搜索完毕，共找到 %d 条数据", result.Pagination.TotalCount)
 
 	views := genTableViewData(&result)
 	genTableView(views)
 
-	log.Println("✅ 搜索任务完成！")
+	logger.Done("搜索任务完成！")
 }
 
 // --------------------- 表格输出 ---------------------
@@ -204,12 +204,12 @@ search download 子命令用于根据搜索结果批量下载音声资源。
 `,
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) < 1 {
-			log.Println("❌ 请提供搜索关键字，例如：search download 护士")
+			logger.Warn("请提供搜索关键字，例如: search download 护士")
 			return
 		}
 
 		keyword := args[0]
-		log.Printf("⬇️ 开始下载：关键字=%s，保存目录=%s，数量=%d\n", keyword, downloadDir, downloadCnt)
+		logger.Step("开始下载: 关键字=%s, 保存目录=%s, 数量=%d", keyword, downloadDir, downloadCnt)
 
 		doSearchDownload(keyword, downloadDir, downloadCnt)
 	},
@@ -218,13 +218,13 @@ search download 子命令用于根据搜索结果批量下载音声资源。
 func doSearchDownload(keyword string, downloadDir string, count int) {
 	queryParams := model.NewQueryParams(strings.TrimSpace(keyword))
 	if err := queryParams.ParseQueryStr(); err != nil {
-		log.Printf("❌ 解析查询参数失败：%v\n", err)
+		logger.Fail("解析查询参数失败: %v", err)
 		return
 	}
 
 	asmrOneQueryStr, err := queryParams.BuildAsmrOneQueryStr()
 	if err != nil {
-		log.Printf("❌ 构建搜索语法失败：%v\n", err)
+		logger.Fail("构建搜索语法失败: %v", err)
 		return
 	}
 
@@ -234,7 +234,7 @@ func doSearchDownload(keyword string, downloadDir string, count int) {
 		model.AppConfig.Limit.DownloadJitterMax,
 	)
 	if err != nil {
-		log.Printf("❌创建下载引擎管理器失败: %v\n", err)
+		logger.Fail("创建下载引擎管理器失败: %v", err)
 		return
 	}
 	ctx := context.Background()
@@ -242,17 +242,17 @@ func doSearchDownload(keyword string, downloadDir string, count int) {
 	result, err := engineManager.SearchForCountResult(ctx, asmrOneQueryStr, count)
 
 	if err != nil {
-		log.Printf("❌ 搜索失败：%v\n", err)
+		logger.Fail("搜索失败: %s", logger.SummarizeError(err))
 		return
 	}
 
 	views := genTableViewData(&result)
 
-	log.Printf("📥 搜索到 %d 条，开始批量下载...\n", len(views))
+	logger.Info("搜索到 %d 条，开始批量下载...", len(views))
 
 	engineManager.DownloadBatchMedias(ctx, views, downloadDir)
 
-	log.Println("✅ 下载完成！")
+	logger.Done("下载完成！")
 }
 
 //
@@ -297,12 +297,12 @@ search export 子命令用于将搜索结果导出为 CSV 或 JSON 文件，便�
 `,
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) < 1 {
-			log.Println("❌ 请提供搜索关键字，例如：search export 护士")
+			logger.Warn("请提供搜索关键字，例如: search export 护士")
 			return
 		}
 
 		keyword := args[0]
-		log.Printf("📤 导出资源：关键字=%s，文件=%s，数量=%d\n", keyword, exportFile, exportCount)
+		logger.Step("导出资源: 关键字=%s, 文件=%s, 数量=%d", keyword, exportFile, exportCount)
 
 		doSearchExport(keyword)
 	},
@@ -312,12 +312,12 @@ func doSearchExport(keyword string) {
 	queryParams := model.NewQueryParams(strings.TrimSpace(keyword))
 
 	if err := queryParams.ParseQueryStr(); err != nil {
-		log.Printf("❌ 解析失败：%v\n", err)
+		logger.Fail("解析失败: %v", err)
 		return
 	}
 	asmrOneQueryStr, err := queryParams.BuildAsmrOneQueryStr()
 	if err != nil {
-		log.Printf("❌ 构建搜索语法失败：%v\n", err)
+		logger.Fail("构建搜索语法失败: %v", err)
 		return
 	}
 
@@ -327,7 +327,7 @@ func doSearchExport(keyword string) {
 		model.AppConfig.Limit.SyncJitterMax,
 	)
 	if err != nil {
-		log.Printf("❌创建下载引擎管理器失败: %v\n", err)
+		logger.Fail("创建下载引擎管理器失败: %v", err)
 		return
 	}
 	ctx := context.Background()
@@ -335,7 +335,7 @@ func doSearchExport(keyword string) {
 	result, err := engineManager.SearchForCountResult(ctx, asmrOneQueryStr, exportCount)
 
 	if err != nil {
-		log.Printf("❌ 搜索失败：%v\n", err)
+		logger.Fail("搜索失败: %s", logger.SummarizeError(err))
 		return
 	}
 
@@ -353,7 +353,7 @@ func doSearchExport(keyword string) {
 		utils.ExportToJSON(views, exportFile)
 	}
 
-	log.Println("✅ 导出成功！")
+	logger.Done("导出成功！")
 }
 
 // ---------------------- cobra 初始化 ----------------------

@@ -3,8 +3,8 @@ package cmd
 import (
 	"asmroner/internal/consts"
 	"asmroner/internal/database"
+	"asmroner/internal/logger"
 	"asmroner/internal/model"
-	"log"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -71,30 +71,30 @@ asmroner 是一个基于Go的多功能命令行工，提供以下功能：
 
 		if err := viper.ReadInConfig(); err != nil {
 			if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-				log.Println("🔴 配置文件未找到 (config.toml)。")
-				log.Println("👉 请先运行 'asmroner config' 初始化配置文件。")
+				logger.Fail("配置文件未找到 (config.toml)")
+				logger.Info("请先运行 'asmroner config' 初始化配置文件")
 				os.Exit(1)
 			} else {
-				log.Printf("🔴 读取配置文件失败: %v\n", err)
+				logger.Fail("读取配置文件失败: %v", err)
 				os.Exit(1)
 			}
 		}
 
 		config := model.NewDefaultConfig()
 		if err := viper.Unmarshal(config); err != nil {
-			log.Printf("🔴 配置解析失败: %v\n", err)
+			logger.Fail("配置解析失败: %v", err)
 			os.Exit(1)
 		}
 
 		_, err := database.InitDB()
 		if err != nil {
-			log.Printf("🔴 数据库初始化失败: %v\n", err)
+			logger.Fail("数据库初始化失败: %v", err)
 			os.Exit(1)
 		}
 
 		if _, err := os.Stat(config.Downloader.SyncDataFolder); os.IsNotExist(err) {
 			if err := os.MkdirAll(config.Downloader.SyncDataFolder, 0755); err != nil {
-				log.Printf("🔴 创建同步数据目录失败: %v\n", err)
+				logger.Fail("创建同步数据目录失败: %v", err)
 				os.Exit(1)
 			}
 		}
@@ -105,7 +105,7 @@ asmroner 是一个基于Go的多功能命令行工，提供以下功能：
 // 这是 main.main() 调用的唯一入口。
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		log.Println(err)
+		logger.Error("%v", err)
 		os.Exit(1)
 	}
 }

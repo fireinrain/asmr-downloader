@@ -2,9 +2,9 @@ package cmd
 
 import (
 	"asmroner/internal/engine"
+	"asmroner/internal/logger"
 	"asmroner/internal/model"
 	"context"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,7 +58,7 @@ download 命令用于下载音声资源，支持单个 RJID、多项 RJID 批量
 		hotDownloadDir, _ = filepath.Abs(hotDownloadDir)
 
 		if err := os.MkdirAll(hotDownloadDir, os.ModePerm); err != nil {
-			log.Printf("❌创建下载目录失败: %v\n", err)
+			logger.Fail("创建下载目录失败: %v", err)
 			return
 		}
 		engineManager, err := engine.NewEngineManager(
@@ -67,7 +67,7 @@ download 命令用于下载音声资源，支持单个 RJID、多项 RJID 批量
 			model.AppConfig.Limit.DownloadJitterMax,
 		)
 		if err != nil {
-			log.Printf("❌创建下载引擎管理器失败: %v\n", err)
+			logger.Fail("创建下载引擎管理器失败: %v", err)
 			return
 		}
 		ctx := context.Background()
@@ -77,17 +77,17 @@ download 命令用于下载音声资源，支持单个 RJID、多项 RJID 批量
 		// ------------------------------------
 		if keyword == "hot100" {
 			if hotCount <= 0 {
-				log.Println("❌请使用 -n 参数设置要下载的热门作品数量，例如：-n 10")
+				logger.Warn("请使用 -n 参数设置要下载的热门作品数量，例如：-n 10")
 				return
 			}
-			log.Printf("🔥 正在下载 %d 个热门作品到目录：%s\n", hotCount, hotDownloadDir)
+			logger.Step("正在下载 %d 个热门作品到目录: %s", hotCount, hotDownloadDir)
 
 			err := engineManager.DownloadHot100(ctx, hotCount, hotDownloadDir)
 			if err != nil {
-				log.Printf("❌热门作品下载失败: %v\n", err)
+				logger.Fail("热门作品下载失败: %s", logger.SummarizeError(err))
 				return
 			}
-			log.Println("✅ 热门作品下载完成！")
+			logger.Done("热门作品下载完成！")
 			return
 		}
 
@@ -95,15 +95,14 @@ download 命令用于下载音声资源，支持单个 RJID、多项 RJID 批量
 		// 模式 2：下载一个或多个 rjId
 		// ------------------------------------
 		rjIds := strings.Split(keyword, ",")
-		log.Printf("📥 正在下载以下资源：%v\n", rjIds)
-		log.Printf("📂 保存路径：%s\n", hotDownloadDir)
+		logger.DownloadStart(rjIds, hotDownloadDir)
 
 		err = engineManager.SimpleDownload(ctx, rjIds, hotDownloadDir)
 		if err != nil {
-			log.Printf("❌资源下载失败: %v\n", err)
+			logger.Fail("资源下载失败: %s", logger.SummarizeError(err))
 			return
 		}
-		log.Println("✅ 资源下载完成！")
+		logger.Done("资源下载完成！")
 	},
 }
 

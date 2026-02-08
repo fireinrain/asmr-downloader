@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"asmroner/internal/consts"
+	"asmroner/internal/logger"
 	"bufio"
 	"fmt"
 	"log"
@@ -64,7 +65,7 @@ config 命令用于初始化或重置本程序的配置文件，并以“交互�
 		if _, err := os.Stat(configFile); err == nil {
 			ans := prompt(reader, "⚠️ 检测到配置文件已存在，是否要重置？[y/N]: ", "n")
 			if strings.ToLower(ans) != "y" {
-				log.Println("❌ 已取消操作。")
+				logger.Info("已取消操作")
 				return
 			}
 			os.Remove(configFile)
@@ -76,7 +77,7 @@ config 命令用于初始化或重置本程序的配置文件，并以“交互�
 
 // ------------------------- 核心初始化函数 -------------------------
 func InitConfig(reader *bufio.Reader, configFile string) {
-	log.Println("🛠  正在初始化配置...")
+	logger.Step("正在初始化配置...")
 
 	account := prompt(reader, "用户账号（默认：guest）: ", "guest")
 	password := prompt(reader, "用户密码（默认：guest）: ", "guest")
@@ -119,14 +120,14 @@ func InitConfig(reader *bufio.Reader, configFile string) {
 
 	writeConfig(configFile)
 
-	log.Println("✅ 配置文件已成功保存！")
+	logger.Done("配置文件已成功保存！")
 }
 
 // ------------------------- 输入封装函数 -------------------------
 
 // 普通输入
 func prompt(reader *bufio.Reader, text, def string) string {
-	log.Println(text)
+	fmt.Print(text)
 	input, _ := reader.ReadString('\n')
 	input = strings.TrimSpace(input)
 	if input == "" {

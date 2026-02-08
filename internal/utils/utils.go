@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -70,14 +69,12 @@ func FastFetch(url string, wg *sync.WaitGroup, ch chan<- string) {
 
 	resp, err := http.Get(url)
 	if err != nil {
-		log.Printf("Error fetching %s: %v\n", url, err)
 		return
 	}
 	defer resp.Body.Close()
 
 	_, err = io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("Error reading response body from %s: %v\n", url, err)
 		return
 	}
 
@@ -244,9 +241,8 @@ func ExportToCSV(data any, path string) error {
 
 // PromptConfirm 提示用户确认操作
 func PromptConfirm(message string) bool {
-	//y/n 不区分大小写
 	reader := bufio.NewReader(os.Stdin)
-	log.Printf("%s [y/n]: ", message)
+	fmt.Printf("%s [y/n]: ", message)
 	response, _ := reader.ReadString('\n')
 	response = strings.TrimSpace(strings.ToLower(response))
 	return strings.ToLower(response) == "y"

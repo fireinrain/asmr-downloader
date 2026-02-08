@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"asmroner/internal/database"
+	"asmroner/internal/logger"
 	"asmroner/internal/model"
 	"asmroner/webui"
 	"context"
@@ -67,12 +68,12 @@ listen 命令用于启动一个 Web UI 服务器，用于展示和播放下载�
 		}
 		absDataFolder, err := filepath.Abs(dataFolder)
 		if err != nil {
-			log.Printf("❌ 获取绝对路径失败: %v\n", err)
+			logger.Fail("获取绝对路径失败: %v", err)
 			return
 		}
 
 		if _, err := os.Stat(absDataFolder); os.IsNotExist(err) {
-			log.Printf("❌ 数据目录不存在: %s\n", absDataFolder)
+			logger.Fail("数据目录不存在: %s", absDataFolder)
 			return
 		}
 
@@ -83,7 +84,7 @@ listen 命令用于启动一个 Web UI 服务器，用于展示和播放下载�
 		if port == 0 {
 			port = 9999
 		}
-		log.Printf("🚀 启动 Web UI，端口: %d，数据目录: %s\n", port, absDataFolder)
+		logger.Step("启动 Web UI，端口: %d，数据目录: %s", port, absDataFolder)
 
 		// Gin Release 模式
 		gin.SetMode(gin.ReleaseMode)
@@ -152,7 +153,7 @@ listen 命令用于启动一个 Web UI 服务器，用于展示和播放下载�
 		quit := make(chan os.Signal, 1)
 		signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 		<-quit
-		log.Println("⚠️ 接收到退出信号，正在优雅关闭服务器...")
+		logger.Warn("接收到退出信号，正在优雅关闭服务器...")
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -161,7 +162,7 @@ listen 命令用于启动一个 Web UI 服务器，用于展示和播放下载�
 			log.Fatalf("服务器强制关闭: %v", err)
 		}
 
-		log.Println("✅ 服务器已成功关闭")
+		logger.Done("服务器已成功关闭")
 	},
 }
 
