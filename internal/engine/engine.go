@@ -31,7 +31,8 @@ type EngineManager struct {
 	DB           *gorm.DB
 	DownLimiter  *SmartLimiter
 	Config       *model.Config
-	DownloadPool pond.Pool
+	WorkerPool   pond.Pool // work 间并行下载池，限速器控制提交速率
+	DownloadPool pond.Pool // 单 work 内文件并行下载池
 	Client       *resty.Client
 	JWTToken     string
 	ApiUrl       string
@@ -57,6 +58,7 @@ func NewEngineManager(r float64, burst int, minMs int, maxMs int) (*EngineManage
 	}
 
 	workers := config.Downloader.MaxWorkers
+	workerPool := pond.NewPool(workers)
 	downloadPool := pond.NewPool(workers)
 
 	client, err := buildRestyClient(config)
@@ -70,6 +72,7 @@ func NewEngineManager(r float64, burst int, minMs int, maxMs int) (*EngineManage
 		DB:           database.Database,
 		DownLimiter:  NewSmartLimiter(r, burst, minMs, maxMs),
 		Config:       config,
+		WorkerPool:   workerPool,
 		DownloadPool: downloadPool,
 		Client:       client,
 		ApiUrl:       apiUrl,
@@ -180,23 +183,26 @@ func (m *EngineManager) AuthLogin(ctx context.Context) error {
 	return nil
 }
 
-// SimpleDownload 逐个下载，每个作品由 DownloadOne 内部限速
+// SimpleDownload 并行下载，限速器控制提交速率，WorkerPool 控制最大并发数
 func (m *EngineManager) SimpleDownload(ctx context.Context, ids []string, storeBaseDir string) error {
+	group := m.WorkerPool.NewGroup()
 	for _, id := range ids {
-		if err := m.DownloadOne(ctx, id, storeBaseDir); err != nil {
-			log.Printf("下载 %s 失败: %v", id, err)
-			return err
+		// 限速：在主 goroutine 中等待令牌，控制提交速率
+		if err := m.DownLimiter.Wait(ctx); err != nil {
+			return fmt.Errorf("限流器等待失败: %w", err)
 		}
+		group.SubmitErr(func() error {
+			if err := m.DownloadOne(ctx, id, storeBaseDir); err != nil {
+				log.Printf("下载 %s 失败: %v", id, err)
+				return err
+			}
+			return nil
+		})
 	}
-	return nil
+	return group.Wait()
 }
 
 func (m *EngineManager) DownloadOne(ctx context.Context, id string, storeBaseDir string) error {
-	// 限速：每次下载作品前等待令牌
-	if err := m.DownLimiter.Wait(ctx); err != nil {
-		return fmt.Errorf("限流器等待失败: %w", err)
-	}
-
 	valid, prefix, number, err := utils.IsValidDlsiteID(id)
 	if err != nil || !valid {
 		return err
@@ -602,24 +608,39 @@ func (m *EngineManager) SearchForCountResult(ctx context.Context, asmrOneQuerySt
 }
 
 func (m *EngineManager) DownloadBatchMedias(ctx context.Context, works []model.SearchResultView, storePathDir string) error {
+	group := m.WorkerPool.NewGroup()
 	for _, work := range works {
-		if err := m.DownloadOne(ctx, work.SourceID, storePathDir); err != nil {
-			log.Printf("下载 %s 失败: %v", work.SourceID, err)
-			return err
+		// 限速：在主 goroutine 中等待令牌，控制提交速率
+		if err := m.DownLimiter.Wait(ctx); err != nil {
+			return fmt.Errorf("限流器等待失败: %w", err)
 		}
+		group.SubmitErr(func() error {
+			if err := m.DownloadOne(ctx, work.SourceID, storePathDir); err != nil {
+				log.Printf("下载 %s 失败: %v", work.SourceID, err)
+				return err
+			}
+			return nil
+		})
 	}
-	return nil
+	return group.Wait()
 }
 
 func (m *EngineManager) DownloadMediaByBatchIds(ctx context.Context, worksId []string, storePathDir string) error {
+	group := m.WorkerPool.NewGroup()
 	for _, id := range worksId {
-		// DownloadOne 内部已包含限速
-		if err := m.DownloadOne(ctx, id, storePathDir); err != nil {
-			log.Printf("下载作品 %s 失败: %v", id, err)
-			return err
+		// 限速：在主 goroutine 中等待令牌，控制提交速率
+		if err := m.DownLimiter.Wait(ctx); err != nil {
+			return fmt.Errorf("限流器等待失败: %w", err)
 		}
+		group.SubmitErr(func() error {
+			if err := m.DownloadOne(ctx, id, storePathDir); err != nil {
+				log.Printf("下载作品 %s 失败: %v", id, err)
+				return err
+			}
+			return nil
+		})
 	}
-	return nil
+	return group.Wait()
 }
 
 // 打印同步元数据统计信息

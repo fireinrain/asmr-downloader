@@ -233,9 +233,15 @@ func doBatchSyncDownload(downDir string, batchSize int, batchCount int, download
 	}
 	ctx := context.Background()
 
-	// 逐个下载，检查大小限制
+	// 逐个下载，每次提交前限速，下载后检查大小限制
 	for i := range workSyncInfos {
 		info := &workSyncInfos[i]
+
+		// 限速：在提交下载前等待令牌
+		if err := manager.DownLimiter.Wait(ctx); err != nil {
+			log.Printf("❌ 限流器等待失败: %v", err)
+			break
+		}
 
 		log.Printf("🚀 开始下载作品: %s", info.SourceId)
 		downErr := manager.DownloadOne(ctx, info.SourceId, downDir)
@@ -377,6 +383,11 @@ sync retry 子命令用于重试指定目录下下载失败的文件。
 
 		for _, info := range failedSyncInfos {
 			log.Printf("🔄 重试下载作品 %s", info.SourceId)
+			// 限速：在提交下载前等待令牌
+			if err := manager.DownLimiter.Wait(context.Background()); err != nil {
+				log.Printf("❌ 限流器等待失败: %v", err)
+				break
+			}
 			err := doSyncFailedDownload(db, manager, info)
 			if err != nil {
 				log.Printf("❌ 重试下载作品 %s 失败: %v", info.SourceId, err)
