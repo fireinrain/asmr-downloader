@@ -71,7 +71,11 @@ sync 命令用于同步资源元数据，并管理文件下载、失败重试及
 }
 
 func doSyncMetadata() error {
-	engineManager, err := engine.NewEngineManager()
+	engineManager, err := engine.NewEngineManager(
+		model.AppConfig.Limit.SyncQPS, 1,
+		model.AppConfig.Limit.SyncJitterMin,
+		model.AppConfig.Limit.SyncJitterMax,
+	)
 	if err != nil {
 		log.Fatalf("❌创建下载引擎管理器失败: %v\n", err)
 	}
@@ -242,7 +246,11 @@ func doBatchSyncDownload(downDir string, batchSize int, batchCount int, download
 	var wg sync.WaitGroup
 
 	// 启动下载工作池
-	manager, err := engine.NewEngineManager()
+	manager, err := engine.NewEngineManager(
+		model.AppConfig.Limit.DownloadQPS, 1,
+		model.AppConfig.Limit.DownloadJitterMin,
+		model.AppConfig.Limit.DownloadJitterMax,
+	)
 	if err != nil {
 		log.Fatalf("❌创建下载引擎管理器失败: %v\n", err)
 	}
@@ -330,41 +338,39 @@ func doBatchSyncDownload(downDir string, batchSize int, batchCount int, download
 
 	doneCount := 0
 	for doneCount < len(workSyncInfos) && !needCancel {
-		select {
-		case result := <-resultChan:
-			doneCount++
+		result := <-resultChan
+		doneCount++
 
-			// 更新数据库状态
-			updateResult := db.Model(&model.WorkSyncInfo{}).
-				Where("metadata_work_id = ?", result.SyncInfo.MetadataWorkId).
-				Updates(map[string]interface{}{
-					"status":       result.SyncInfo.Status,
-					"dir_size":     result.SyncInfo.DirSize,
-					"updated_at":   result.SyncInfo.UpdatedAt,
-					"fail_reason":  result.SyncInfo.FailReason,
-					"retry_count":  result.SyncInfo.RetryCount,
-					"failed_at":    result.SyncInfo.FailedAt,
-					"has_subtitle": result.SyncInfo.HasSubtitle,
-				})
+		// 更新数据库状态
+		updateResult := db.Model(&model.WorkSyncInfo{}).
+			Where("metadata_work_id = ?", result.SyncInfo.MetadataWorkId).
+			Updates(map[string]interface{}{
+				"status":       result.SyncInfo.Status,
+				"dir_size":     result.SyncInfo.DirSize,
+				"updated_at":   result.SyncInfo.UpdatedAt,
+				"fail_reason":  result.SyncInfo.FailReason,
+				"retry_count":  result.SyncInfo.RetryCount,
+				"failed_at":    result.SyncInfo.FailedAt,
+				"has_subtitle": result.SyncInfo.HasSubtitle,
+			})
 
-			if updateResult.Error != nil {
-				log.Printf("❌ 更新work_sync_infos失败(作品ID: %d): %v", result.SyncInfo.MetadataWorkId, updateResult.Error)
+		if updateResult.Error != nil {
+			log.Printf("❌ 更新work_sync_infos失败(作品ID: %d): %v", result.SyncInfo.MetadataWorkId, updateResult.Error)
+		} else {
+			if result.SyncInfo.Status == "COMPLETED" {
+				totalDownloadedSize += result.Size
+				log.Printf("✅ 作品ID: %d 下载完成, 大小: %d bytes", result.SyncInfo.MetadataWorkId, result.Size)
 			} else {
-				if result.SyncInfo.Status == "COMPLETED" {
-					totalDownloadedSize += result.Size
-					log.Printf("✅ 作品ID: %d 下载完成, 大小: %d bytes", result.SyncInfo.MetadataWorkId, result.Size)
-				} else {
-					log.Printf("❌ 作品ID: %d 下载失败: %v", result.SyncInfo.MetadataWorkId, result.Error)
-				}
+				log.Printf("❌ 作品ID: %d 下载失败: %v", result.SyncInfo.MetadataWorkId, result.Error)
 			}
+		}
 
-			// 6. 当下载完的总数据大小 等于配置文件的设定值 取消所有下载任务
-			if totalDownloadedSize >= maxSize {
-				log.Printf("📦 已达到下载目标大小 (%d bytes), 取消剩余下载任务", totalDownloadedSize)
-				close(cancelChan)
-				needCancel = true
-				// 不立即关闭resultChan，而是等待正在处理的任务完成
-			}
+		// 6. 当下载完的总数据大小 等于配置文件的设定值 取消所有下载任务
+		if totalDownloadedSize >= maxSize {
+			log.Printf("📦 已达到下载目标大小 (%d bytes), 取消剩余下载任务", totalDownloadedSize)
+			close(cancelChan)
+			needCancel = true
+			// 不立即关闭resultChan，而是等待正在处理的任务完成
 		}
 	}
 
@@ -428,7 +434,6 @@ func cleanSyncDownPendingData(db *gorm.DB) {
 		log.Println("❌ 删除work_sync_infos失败:", t.Error)
 		return
 	}
-	return
 }
 
 func checkIfNeedSyncDownload(db *gorm.DB, downloadLimitSize int64) (bool, int64, error) {
@@ -503,7 +508,11 @@ func doSyncFailedDownload(db *gorm.DB, info model.WorkSyncInfo) error {
 	if err != nil {
 		return err
 	}
-	manager, err := engine.NewEngineManager()
+	manager, err := engine.NewEngineManager(
+		model.AppConfig.Limit.DownloadQPS, 1,
+		model.AppConfig.Limit.DownloadJitterMin,
+		model.AppConfig.Limit.DownloadJitterMax,
+	)
 	if err != nil {
 		log.Fatalf("❌创建下载引擎管理器失败: %v\n", err)
 	}

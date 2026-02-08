@@ -98,7 +98,11 @@ func doSearchTask(keyword string, count int) {
 		return
 	}
 
-	engineManager, err := engine.NewEngineManager()
+	engineManager, err := engine.NewEngineManager(
+		model.AppConfig.Limit.SyncQPS, 1,
+		model.AppConfig.Limit.SyncJitterMin,
+		model.AppConfig.Limit.SyncJitterMax,
+	)
 	if err != nil {
 		log.Fatalf("❌创建下载引擎管理器失败: %v\n", err)
 	}
@@ -223,7 +227,11 @@ func doSearchDownload(keyword string, downloadDir string, count int) {
 		return
 	}
 
-	engineManager, err := engine.NewEngineManager()
+	engineManager, err := engine.NewEngineManager(
+		model.AppConfig.Limit.DownloadQPS, 1,
+		model.AppConfig.Limit.DownloadJitterMin,
+		model.AppConfig.Limit.DownloadJitterMax,
+	)
 	if err != nil {
 		log.Fatalf("❌创建下载引擎管理器失败: %v\n", err)
 	}
@@ -311,7 +319,11 @@ func doSearchExport(keyword string) {
 		return
 	}
 
-	engineManager, err := engine.NewEngineManager()
+	engineManager, err := engine.NewEngineManager(
+		model.AppConfig.Limit.SyncQPS, 1,
+		model.AppConfig.Limit.SyncJitterMin,
+		model.AppConfig.Limit.SyncJitterMax,
+	)
 	if err != nil {
 		log.Fatalf("❌创建下载引擎管理器失败: %v\n", err)
 	}

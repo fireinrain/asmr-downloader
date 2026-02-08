@@ -53,7 +53,7 @@ var defaultHeaders = map[string]string{
 }
 
 // NewEngineManager 构造函数，增加 error 返回以符合 Go 惯例
-func NewEngineManager() (*EngineManager, error) {
+func NewEngineManager(r float64, burst int, minMs int, maxMs int) (*EngineManager, error) {
 	config := model.AppConfig
 	if config == nil {
 		return nil, errors.New("application config is not initialized")
@@ -73,7 +73,7 @@ func NewEngineManager() (*EngineManager, error) {
 
 	engine := &EngineManager{
 		DB:                    database.Database,
-		DownLimiter:           NewSmartLimiter(0.5, 1, 200, 400),
+		DownLimiter:           NewSmartLimiter(r, burst, minMs, maxMs),
 		Config:                config,
 		WorkerPool:            &pool,
 		DownloadPool:          &downloadPool,
@@ -370,7 +370,7 @@ func (m *EngineManager) GetVoiceTracks(id string) ([]model.Track, error) {
 		return nil, err
 	}
 	if !resp.IsSuccess() {
-		return nil, errors.New("Request error,status code: " + string(resp.StatusCode()))
+		return nil, errors.New("Request error, status code: " + strconv.Itoa(resp.StatusCode()))
 	}
 	return result, nil
 }
@@ -393,7 +393,7 @@ func (m *EngineManager) GetWorkInfo(ctx context.Context, id string) (model.WorkI
 		return result, err
 	}
 	if !resp.IsSuccess() {
-		return result, errors.New("Request error,status code: " + string(resp.StatusCode()))
+		return result, errors.New("Request error, status code: " + strconv.Itoa(resp.StatusCode()))
 	}
 	return result, nil
 }
@@ -607,7 +607,7 @@ func (m *EngineManager) downloadFile(url string, path string, fileName string) e
 		return err
 	}
 	if !resp.IsSuccess() {
-		return errors.New("Request error,status code: " + string(resp.StatusCode()))
+		return errors.New("Request error, status code: " + strconv.Itoa(resp.StatusCode()))
 	}
 	return nil
 }
@@ -630,7 +630,7 @@ func (m *EngineManager) SearchForCountResult(ctx context.Context, asmrOneQuerySt
 		return result, err
 	}
 	if !resp.IsSuccess() {
-		return result, errors.New("Request error,status code: " + string(resp.StatusCode()))
+		return result, errors.New("Request error, status code: " + strconv.Itoa(resp.StatusCode()))
 	}
 	// 如果结果比较少
 	if result.Pagination.TotalCount > count && count < result.Pagination.PageSize {
@@ -662,7 +662,7 @@ func (m *EngineManager) SearchForCountResult(ctx context.Context, asmrOneQuerySt
 				return newResult, err
 			}
 			if !resp.IsSuccess() {
-				return newResult, errors.New("Request error,status code: " + string(resp.StatusCode()))
+				return newResult, errors.New("Request error, status code: " + strconv.Itoa(resp.StatusCode()))
 			}
 			// 合并结果
 			result.Works = append(result.Works, newResult.Works...)
@@ -793,7 +793,7 @@ func (m *EngineManager) DownloadHot100(ctx context.Context, count int, dir strin
 	}
 	if !resp.IsSuccess() {
 		logger.RecordFailure("DownloadHot100"+" ", url, resp.Status())
-		return errors.New("Request error,status code: " + string(resp.StatusCode()))
+		return errors.New("Request error, status code: " + strconv.Itoa(resp.StatusCode()))
 	}
 	if count <= 0 {
 		return errors.New("下载数量选择必须大于0")

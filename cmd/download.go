@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"asmroner/internal/engine"
+	"asmroner/internal/model"
 	"context"
 	"log"
 	"os"
@@ -62,7 +63,11 @@ download 命令用于下载音声资源，支持单个 RJID、多项 RJID 批量
 		if err := os.MkdirAll(hotDownloadDir, os.ModePerm); err != nil {
 			log.Fatalf("❌创建下载目录失败: %v\n", err)
 		}
-		engineManager, err := engine.NewEngineManager()
+		engineManager, err := engine.NewEngineManager(
+			model.AppConfig.Limit.DownloadQPS, 1,
+			model.AppConfig.Limit.DownloadJitterMin,
+			model.AppConfig.Limit.DownloadJitterMax,
+		)
 		if err != nil {
 			log.Fatalf("❌创建下载引擎管理器失败: %v\n", err)
 		}
