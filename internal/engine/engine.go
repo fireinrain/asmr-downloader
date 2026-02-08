@@ -31,7 +31,6 @@ type EngineManager struct {
 	DB           *gorm.DB
 	DownLimiter  *SmartLimiter
 	Config       *model.Config
-	WorkerPool   pond.Pool
 	DownloadPool pond.Pool
 	Client       *resty.Client
 	JWTToken     string
@@ -58,8 +57,7 @@ func NewEngineManager(r float64, burst int, minMs int, maxMs int) (*EngineManage
 	}
 
 	workers := config.Downloader.MaxWorkers
-	pool := pond.NewPool(workers)
-	downloadPool := pond.NewPool(workers + 1)
+	downloadPool := pond.NewPool(workers)
 
 	client, err := buildRestyClient(config)
 	if err != nil {
@@ -72,7 +70,6 @@ func NewEngineManager(r float64, burst int, minMs int, maxMs int) (*EngineManage
 		DB:           database.Database,
 		DownLimiter:  NewSmartLimiter(r, burst, minMs, maxMs),
 		Config:       config,
-		WorkerPool:   pool,
 		DownloadPool: downloadPool,
 		Client:       client,
 		ApiUrl:       apiUrl,
@@ -183,21 +180,23 @@ func (m *EngineManager) AuthLogin(ctx context.Context) error {
 	return nil
 }
 
-// SimpleDownload 简单下载 可传入RJId 或者RJID列表
+// SimpleDownload 逐个下载，每个作品由 DownloadOne 内部限速
 func (m *EngineManager) SimpleDownload(ctx context.Context, ids []string, storeBaseDir string) error {
-	group := m.WorkerPool.NewGroup()
 	for _, id := range ids {
-		// 提交任务到 Worker Pool
-		group.SubmitErr(func() error {
-			return m.DownloadOne(ctx, id, storeBaseDir)
-		})
+		if err := m.DownloadOne(ctx, id, storeBaseDir); err != nil {
+			log.Printf("下载 %s 失败: %v", id, err)
+			return err
+		}
 	}
-	err := group.Wait()
-	return err
+	return nil
 }
 
 func (m *EngineManager) DownloadOne(ctx context.Context, id string, storeBaseDir string) error {
-	//检查是否是合格的id
+	// 限速：每次下载作品前等待令牌
+	if err := m.DownLimiter.Wait(ctx); err != nil {
+		return fmt.Errorf("限流器等待失败: %w", err)
+	}
+
 	valid, prefix, number, err := utils.IsValidDlsiteID(id)
 	if err != nil || !valid {
 		return err
@@ -478,6 +477,11 @@ func (m *EngineManager) SyncMetadata(ctx context.Context) error {
 }
 
 func (m *EngineManager) fetchMetaDataResp(url string) (*model.MetadataWorkResponse, error) {
+	// 限速：每次 API 请求前等待令牌
+	if err := m.DownLimiter.Wait(context.Background()); err != nil {
+		return nil, fmt.Errorf("限流器等待失败: %w", err)
+	}
+
 	headers := defaultHeaders
 
 	var result = model.MetadataWorkResponse{}
@@ -598,38 +602,20 @@ func (m *EngineManager) SearchForCountResult(ctx context.Context, asmrOneQuerySt
 }
 
 func (m *EngineManager) DownloadBatchMedias(ctx context.Context, works []model.SearchResultView, storePathDir string) error {
-	var ids []string
 	for _, work := range works {
-		id := work.SourceID
-		ids = append(ids, id)
+		if err := m.DownloadOne(ctx, work.SourceID, storePathDir); err != nil {
+			log.Printf("下载 %s 失败: %v", work.SourceID, err)
+			return err
+		}
 	}
-	group := m.WorkerPool.NewGroup()
-	for _, id := range ids {
-		group.SubmitErr(func() error {
-			return m.DownloadOne(ctx, id, storePathDir)
-		})
-	}
-	return group.Wait()
+	return nil
 }
 
 func (m *EngineManager) DownloadMediaByBatchIds(ctx context.Context, worksId []string, storePathDir string) error {
-	if len(worksId) <= 0 {
-		return nil
-	}
 	for _, id := range worksId {
-		// 等待令牌
-		if err := m.DownLimiter.Wait(ctx); err != nil {
-			log.Println("等待下载限流器令牌失败: ", err.Error())
-			return err
-		}
-		err := m.DownloadOne(ctx, id, storePathDir)
-		//err := func() error {
-		//	log.Println("正在下载作品: ", id)
-		//	time.Sleep(5 * time.Second)
-		//	return nil
-		//}()
-		if err != nil {
-			log.Println("下载作品失败: ", err.Error())
+		// DownloadOne 内部已包含限速
+		if err := m.DownloadOne(ctx, id, storePathDir); err != nil {
+			log.Printf("下载作品 %s 失败: %v", id, err)
 			return err
 		}
 	}
