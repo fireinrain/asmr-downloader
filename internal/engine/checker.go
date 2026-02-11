@@ -4,12 +4,12 @@ import (
 	"asmroner/internal/consts"
 	"asmroner/internal/model"
 	"fmt"
-	"log"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
 
+	"asmroner/internal/logger"
 	"asmroner/internal/utils"
 
 	"github.com/go-resty/resty/v2"
@@ -21,7 +21,6 @@ func GetAsmrLatestUrls() ([]string, error) {
 	cfProxyPublishSite := "https://as.131433.xyz"
 	var latestPublishSite string
 
-	// 初始化 Resty 客户端
 	client := resty.New().
 		SetTimeout(10*time.Second).
 		SetHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36")
@@ -29,19 +28,24 @@ func GetAsmrLatestUrls() ([]string, error) {
 	// 先尝试官方站点
 	resp, err := client.R().Get(officialPublishSite)
 	if err != nil || resp.StatusCode() != 200 {
-		log.Println("尝试访问asmr.one最新站点发布页as.mr失败: ", err.Error())
-		log.Println("当前使用as.131433.xyz代理访问最新站点发布页...")
+		if err != nil {
+			logger.Warn("尝试访问asmr.one最新站点发布页as.mr失败: %v", err)
+		}
+		logger.Info("当前使用as.131433.xyz代理访问最新站点发布页...")
 		latestPublishSite = cfProxyPublishSite
 	} else {
-		log.Println("当前使用as.mr访问最新站点发布页...")
+		logger.Info("当前使用as.mr访问最新站点发布页...")
 		latestPublishSite = officialPublishSite
 	}
 
 	// 访问最新发布页获取 HTML
 	resp, err = client.R().Get(latestPublishSite)
-	if err != nil || resp.StatusCode() != 200 {
-		log.Println("访问asmr.one最新域名发布页出现错误: ", err.Error())
+	if err != nil {
+		logger.Error("访问asmr.one最新域名发布页出现错误: %v", err)
 		return nil, err
+	}
+	if resp.StatusCode() != 200 {
+		return nil, fmt.Errorf("访问asmr.one最新域名发布页返回状态码: %d", resp.StatusCode())
 	}
 	bodyText := resp.String()
 
@@ -54,15 +58,18 @@ func GetAsmrLatestUrls() ([]string, error) {
 	if len(match) > 1 {
 		jsFilePath = match[1]
 	} else {
-		log.Println("JavaScript file path not found in HTML")
+		logger.Warn("JavaScript file path not found in HTML")
 		return nil, fmt.Errorf("js file path not found")
 	}
 
 	jsContentUrl := latestPublishSite + jsFilePath
 	resp, err = client.R().Get(jsContentUrl)
-	if err != nil || resp.StatusCode() != 200 {
-		log.Println("访问asmr.one最新域名发布页js resource出现错误: ", err.Error())
+	if err != nil {
+		logger.Error("访问asmr.one最新域名发布页js resource出现错误: %v", err)
 		return nil, err
+	}
+	if !resp.IsSuccess() {
+		return nil, fmt.Errorf("获取JS资源失败, 状态码: %d", resp.StatusCode())
 	}
 	jsText := resp.String()
 
@@ -96,8 +103,8 @@ func GetRespFastestSiteUrl() string {
 
 	latestUrls, err := GetAsmrLatestUrls()
 	if err != nil {
-		log.Println("获取最新域名列表失败: ", err.Error())
-		return "https://api.asmr.one" // 默认返回
+		logger.Warn("获取最新域名列表失败: %v，使用默认地址", err)
+		return "https://api.asmr.one"
 	}
 
 	var wg sync.WaitGroup
@@ -108,23 +115,21 @@ func GetRespFastestSiteUrl() string {
 		go utils.FastFetch(url, &wg, ch)
 	}
 
+	// Close channel after all goroutines finish
 	go func() {
 		wg.Wait()
 		close(ch)
 	}()
 
-	var fastestResponse string
-	for response := range ch {
-		if fastestResponse == "" || len(response) < len(fastestResponse) {
-			fastestResponse = response
-		}
-		log.Println("Checking Fast Response: ", response)
+	// The first result from the channel is the fastest responder
+	fastestURL, ok := <-ch
+	if !ok || fastestURL == "" {
+		logger.Warn("未找到最快响应的站点，使用默认地址")
+		return "https://api.asmr.one"
 	}
 
-	log.Println("Fastest Response is: ", fastestResponse)
-	fastUrls := strings.Split(fastestResponse, "|")
-	url := fastUrls[0]
-	url = strings.Trim(url, "/")
-	apiUrl := strings.Replace(url, "https://", "https://api.", 1)
+	logger.Info("最快响应站点: %s", fastestURL)
+	fastestURL = strings.TrimRight(fastestURL, "/")
+	apiUrl := strings.Replace(fastestURL, "https://", "https://api.", 1)
 	return apiUrl
 }

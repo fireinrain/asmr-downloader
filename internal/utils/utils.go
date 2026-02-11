@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -17,15 +16,19 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 )
 
-// EnSureDirExist 确保目录存在，不存在则创建
-func EnSureDirExist(pathDir string) {
+// FastFetchResult holds the URL and response time for fastest-site detection.
+type FastFetchResult struct {
+	URL      string
+	Duration string
+}
+
+// EnsureDirExist 确保目录存在，不存在则创建
+func EnsureDirExist(pathDir string) {
 	if _, err := os.Stat(pathDir); os.IsNotExist(err) {
-		os.MkdirAll(pathDir, 0755)
+		_ = os.MkdirAll(pathDir, 0755)
 	}
-	return
 }
 
 // FileSize2Byte WantedSize2Byte 将字符串表示的文件大小转换为字节数
@@ -56,29 +59,26 @@ func FileSize2Byte(fileSizeStr string) (int64, error) {
 }
 
 func RandomUserAgent(useragents []string) string {
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	return useragents[r.Intn(len(useragents))]
+	return useragents[rand.Intn(len(useragents))]
 }
 
+// FastFetch fetches a URL and sends it to the channel on success.
+// The first URL to arrive in the channel is the fastest.
 func FastFetch(url string, wg *sync.WaitGroup, ch chan<- string) {
 	defer wg.Done()
 
-	startTime := time.Now()
 	resp, err := http.Get(url)
 	if err != nil {
-		fmt.Printf("Error fetching %s: %v\n", url, err)
 		return
 	}
 	defer resp.Body.Close()
 
 	_, err = io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Printf("Error reading response body from %s: %v\n", url, err)
 		return
 	}
 
-	duration := time.Since(startTime)
-	ch <- fmt.Sprintf("%s|%s", url, duration)
+	ch <- url
 }
 
 // IsValidDlsiteID 校验Dlsite ID是否合法
@@ -98,9 +98,8 @@ func IsValidDlsiteID(id string) (isValid bool, prefix string, number string, err
 
 // NormalDirPathStr 去除可能导致目录创建失败的字符串
 func NormalDirPathStr(path string) string {
-
-	for _, str := range []string{"?", "<", ">", ":", "*", "|", " "} {
-		path = strings.Replace(path, str, "_", -1)
+	for _, str := range []string{"?", "<", ">", ":", "*", "|", " ", "\""} {
+		path = strings.ReplaceAll(path, str, "_")
 	}
 	return strings.TrimSpace(path)
 }
@@ -242,9 +241,8 @@ func ExportToCSV(data any, path string) error {
 
 // PromptConfirm 提示用户确认操作
 func PromptConfirm(message string) bool {
-	//y/n 不区分大小写
 	reader := bufio.NewReader(os.Stdin)
-	log.Printf("%s [y/n]: ", message)
+	fmt.Printf("%s [y/n]: ", message)
 	response, _ := reader.ReadString('\n')
 	response = strings.TrimSpace(strings.ToLower(response))
 	return strings.ToLower(response) == "y"
@@ -253,13 +251,14 @@ func PromptConfirm(message string) bool {
 // Byte2FileSize 将字节数转换为人类可读的文件大小字符串
 func Byte2FileSize(size int64) string {
 	units := []string{"B", "KB", "MB", "GB", "TB"}
+	f := float64(size)
 	for _, unit := range units {
-		if size < 1024 {
-			return fmt.Sprintf("%.2f %s", size, unit)
+		if f < 1024 {
+			return fmt.Sprintf("%.2f %s", f, unit)
 		}
-		size /= 1024
+		f /= 1024
 	}
-	return fmt.Sprintf("%.2f %s", size, units[len(units)-1])
+	return fmt.Sprintf("%.2f %s", f, units[len(units)-1])
 }
 
 // GetDirSize 递归计算目录大小（包含子目录）

@@ -122,7 +122,7 @@ func (p *QueryParams) ParseQueryStr() error {
 		pageInfo := parsePageInfo(split[1])
 		p.PageInfo = &pageInfo
 	}
-	if p.PlainTexts == nil || len(p.PlainTexts) == 0 {
+	if len(p.PlainTexts) == 0 {
 		p.PlainTexts = []string{queryStr}
 	}
 
@@ -138,7 +138,7 @@ func (p *QueryParams) BuildAsmrOneQueryStr() (string, error) {
 	}
 	builder := strings.Builder{}
 	// 构建普通文本部分
-	if p.PlainTexts != nil && len(p.PlainTexts) > 0 {
+	if len(p.PlainTexts) > 0 {
 		plainText := " " + strings.Join(p.PlainTexts, " ")
 		builder.WriteString(plainText)
 	}
