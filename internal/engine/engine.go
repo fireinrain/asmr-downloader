@@ -656,7 +656,7 @@ func (m *EngineManager) SearchForCountResult(ctx context.Context, asmrOneQuerySt
 		for i := 2; i <= page; i++ {
 			// 构建分页URL
 			var newResult model.SearchResult
-			pageURL := strings.ReplaceAll(url, "?page=1", fmt.Sprintf("?page=%d", i))
+			pageURL := strings.ReplaceAll(url, "&page=1", fmt.Sprintf("&page=%d", i))
 			// 发送GET请求
 			resp, err := m.Client.R().
 				SetHeader("Authorization", m.JWTToken).
