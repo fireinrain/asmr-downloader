@@ -638,6 +638,7 @@ func (m *EngineManager) SearchForCountResult(ctx context.Context, asmrOneQuerySt
 	if !resp.IsSuccess() {
 		return result, fmt.Errorf("搜索请求HTTP错误, 状态码: %d", resp.StatusCode())
 	}
+	logger.Info("作品搜索结果总数: %d", result.Pagination.TotalCount)
 	// 如果结果比较少
 	if result.Pagination.TotalCount > count && count < result.Pagination.PageSize {
 		result.Works = result.Works[:count]
