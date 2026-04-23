@@ -68,9 +68,9 @@ go build -o asmroner
 ./asmroner sync report
 
   # 导出单个作品或指定数量热门榜链接 & 导出到指定目录
-  asmroner export RJ01544940 -o ./downloads
-  asmroner export hot100 -n 20 -o ./downloads
-  asmroner export hot100 -n 10 -o ./downloads
+./asmroner export RJ01544940 -o ./downloads
+./asmroner export hot100 -n 20 -o ./downloads
+./asmroner export hot100 -n 10 -o ./downloads
 
 # Web 播放界面
 ./asmroner listen -p 8080 ./syncdata
@@ -87,6 +87,8 @@ go build -o asmroner
 | ![同步下载](dist/sync-down.png) | ![统计](dist/sync-report.png) |
 | **Web 界面** | **Web 界面 2** |
 | ![Web界面](dist/listen.png) | ![Web界面2](dist/listen2.png) |
+| **export 界面** | **export 界面 2** |
+| ![export界面](dist/export1.png) | ![export界面2](dist/export2.png) |
 
 <details>
 <summary><b>✨ 功能特性</b></summary>
