@@ -144,6 +144,7 @@ download_jitter_max = 5000
 | `sync retry` | `-d` | 失败文件所在目录 |
 | `sync export` | `-s`, `-f` | 状态（failed/success）、导出文件 |
 | `listen` | `-p` | 端口（默认 9999） |
+| `export` | `-o`, `-n` | 导出目录、hot100数量 |
 
 </details>
 
