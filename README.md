@@ -40,7 +40,7 @@ ASMRoner 是一款 Go 语言命令行工具，用于搜索、下载、同步 asm
 ## 🚀 快速开始
 
 ```bash
-git clone https://github.com/fireinrain/asmroner.git && cd asmroner
+https://github.com/MIKANOoOo/asmr-downloader.git && cd asmroner
 go build -o asmroner
 ./asmroner config   # 交互式初始化配置
 ```
@@ -67,6 +67,11 @@ go build -o asmroner
 ./asmroner sync retry -d ./downloads
 ./asmroner sync report
 
+  # 导出单个作品或指定数量热门榜链接 & 导出到指定目录
+./asmroner export RJ01544940 -o ./downloads
+./asmroner export hot100 -n 20 -o ./downloads
+./asmroner export hot100 -n 10 -o ./downloads
+
 # Web 播放界面
 ./asmroner listen -p 8080 ./syncdata
 ```
@@ -82,6 +87,8 @@ go build -o asmroner
 | ![同步下载](dist/sync-down.png) | ![统计](dist/sync-report.png) |
 | **Web 界面** | **Web 界面 2** |
 | ![Web界面](dist/listen.png) | ![Web界面2](dist/listen2.png) |
+| **export 界面** | **export 界面 2** |
+| ![export界面](dist/export1.png) | ![export界面2](dist/export2.png) |
 
 <details>
 <summary><b>✨ 功能特性</b></summary>
@@ -137,6 +144,7 @@ download_jitter_max = 5000
 | `sync retry` | `-d` | 失败文件所在目录 |
 | `sync export` | `-s`, `-f` | 状态（failed/success）、导出文件 |
 | `listen` | `-p` | 端口（默认 9999） |
+| `export` | `-o`, `-n` | 导出目录、hot100数量 |
 
 </details>
 
@@ -185,6 +193,8 @@ asmroner/
 **Web 界面无法访问** → 确认端口未被占用，尝试 `-p` 指定其他端口
 
 **搜索结果为空** → 检查查询语法，尝试简化条件
+
+**bat文件运行时找不到idm路径** → 修改 engine.go 文件中982行左右的idm路径（应该为你计算机中idm应用的路径）
 
 </details>
 

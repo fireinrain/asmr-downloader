@@ -808,3 +808,229 @@ func (m *EngineManager) DownloadHot100(ctx context.Context, count int, dir strin
 	}
 	return nil
 }
+
+// ExportLinksOnly 仅获取作品的所有下载链接，不执行实际下载，并按原始目录结构保存链接文件。
+// ctx: 上下文
+// id: 作品ID，例如 "RJ01544940"
+// outputBaseDir: 输出根目录路径。若为空则使用当前目录。
+// 返回每个文件夹下链接数量的统计信息，以及实际作品输出目录。
+func (m *EngineManager) ExportLinksOnly(ctx context.Context, id string, outputBaseDir string) (map[string]int, string, error) {
+	// 校验 ID
+	valid, prefix, number, err := utils.IsValidDlsiteID(id)
+	if err != nil || !valid {
+		return nil, "", fmt.Errorf("无效的作品ID: %s", id)
+	}
+
+	// 限速等待
+	if err := m.DownLimiter.Wait(ctx); err != nil {
+		return nil, "", fmt.Errorf("限流器等待失败: %w", err)
+	}
+
+	// 获取作品信息
+	workInfo, err := m.GetWorkInfo(ctx, number)
+	if err != nil {
+		logger.Warn("获取作品信息失败: %v，将使用ID作为标题", err)
+		workInfo = model.WorkInfo{Title: id, Release: ""}
+	}
+
+	// 获取音轨列表
+	tracks, err := m.GetVoiceTracks(number)
+	if err != nil {
+		return nil, "", fmt.Errorf("获取音轨列表失败: %w", err)
+	}
+
+	// 构建作品文件夹名（与下载逻辑一致）
+	hasSubtitle := ""
+	if workInfo.HasSubtitle {
+		hasSubtitle = "sub"
+	} else {
+		hasSubtitle = "nosub"
+	}
+	folderName := fmt.Sprintf(
+		"%s%s-%s-%s-%s",
+		strings.ToUpper(prefix),
+		number,
+		strings.ReplaceAll(workInfo.Release, "-", ""),
+		hasSubtitle,
+		utils.NormalDirPathStr(strings.ReplaceAll(workInfo.Title, "/", "")),
+	)
+
+	// 确定输出根目录
+	if outputBaseDir == "" {
+		outputBaseDir = "."
+	}
+	workOutputDir := filepath.Join(outputBaseDir, folderName)
+
+	// 递归收集每个文件夹下的文件 URL
+	folderFiles := make(map[string][]string)
+	var collect func([]model.Track, string) error
+	collect = func(ts []model.Track, relPath string) error {
+		for _, t := range ts {
+			if t.Type != "folder" {
+				folderFiles[relPath] = append(folderFiles[relPath], t.MediaDownloadURL)
+			} else {
+				subPath := filepath.Join(relPath, t.Title)
+				if err := collect(t.Children, subPath); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	if err := collect(tracks, ""); err != nil {
+		return nil, "", err
+	}
+
+	// 创建输出目录结构并写入 links.txt，同时记录文件夹路径用于生成脚本
+	stats := make(map[string]int)
+	folderPaths := make(map[string]string) // 相对路径 -> 实际绝对路径
+	for relPath, urls := range folderFiles {
+		dir := workOutputDir
+		if relPath != "" {
+			dir = filepath.Join(workOutputDir, relPath)
+		}
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, "", fmt.Errorf("创建目录 %s 失败: %w", dir, err)
+		}
+		linkFile := filepath.Join(dir, "links.txt")
+		content := strings.Join(urls, "\n")
+		if err := os.WriteFile(linkFile, []byte(content), 0644); err != nil {
+			return nil, "", fmt.Errorf("写入文件 %s 失败: %w", linkFile, err)
+		}
+		stats[relPath] = len(urls)
+		folderPaths[relPath] = dir
+	}
+
+	// 生成 IDM 批处理脚本
+	if err := m.generateIDMScript(workOutputDir, folderPaths); err != nil {
+		logger.Warn("生成 IDM 脚本失败: %v", err)
+	}
+
+	logger.Info("已导出链接文件，共 %d 个文件夹", len(folderFiles))
+	logger.Info("作品目录: %s", workOutputDir)
+
+	return stats, workOutputDir, nil
+}
+
+// ExportHotWorks 导出热门榜前 count 个作品的下载链接（增强版：显示标题）
+func (m *EngineManager) ExportHotWorks(ctx context.Context, count int, outputBaseDir string) error {
+	// 调用热门作品接口获取列表
+	url := m.ApiUrl + consts.AsmrApiPath.HotPath
+	headers := defaultHeaders
+
+	var result = model.MetadataWorkResponse{}
+	body := map[string]interface{}{
+		"keyword":             "",
+		"page":                1,
+		"pageSize":            100,
+		"subtitle":            0,
+		"localSubtitledWorks": []interface{}{},
+		"withPlaylistStatus":  []interface{}{},
+	}
+
+	resp, err := m.Client.R().
+		SetHeader("Authorization", m.JWTToken).
+		SetContext(ctx).
+		SetBody(body).
+		SetHeaders(headers).
+		SetResult(&result).
+		Post(url)
+
+	if err != nil {
+		logger.Error("获取热门作品列表失败: %s", logger.SummarizeError(err))
+		return err
+	}
+	if !resp.IsSuccess() {
+		return fmt.Errorf("获取热门作品列表HTTP错误, 状态码: %d", resp.StatusCode())
+	}
+	if count <= 0 {
+		return errors.New("导出数量必须大于0")
+	}
+
+	// 限制数量
+	works := result.BuildMetadataWork()
+	if count > len(works) {
+		count = len(works)
+	}
+	selectedWorks := works[:count]
+
+	logger.Info("准备导出 %d 个热门作品", count)
+
+	for i, work := range selectedWorks {
+		id := work.SourceID
+		title := work.Title
+		logger.Info("[%d/%d] 正在导出作品: %s - %s", i+1, count, id, title)
+
+		_, _, err := m.ExportLinksOnly(ctx, id, outputBaseDir)
+		if err != nil {
+			logger.Error("导出作品 %s 失败: %s", id, logger.SummarizeError(err))
+			// 继续处理下一个
+			continue
+		}
+	}
+
+	logger.Done("已导出热门榜前 %d 个作品的链接", count)
+	return nil
+}
+
+// generateIDMScript 生成 idm_download.bat 脚本，用于将 links.txt 批量导入 IDM
+// 默认使用自动开始下载 (/s)，如需手动开始可改为 /a
+func (m *EngineManager) generateIDMScript(baseDir string, folderPaths map[string]string) error {
+	scriptPath := filepath.Join(baseDir, "idm_download.bat")
+
+	// IDM 安装路径（请根据实际位置修改）
+	idmPath := `E:\idm\IDM\IDMan.exe`
+
+	var lines []string
+	lines = append(lines, "@echo off")
+	lines = append(lines, "setlocal enabledelayedexpansion")
+	lines = append(lines, "chcp 65001 > nul")
+	lines = append(lines, "echo 正在添加下载任务到 IDM，请勿关闭此窗口...")
+	lines = append(lines, "")
+
+	// 检查 IDM 是否存在
+	lines = append(lines, fmt.Sprintf(`if not exist "%s" (`, idmPath))
+	lines = append(lines, "    echo 错误：找不到 IDM，请修改脚本中的 idmPath 变量")
+	lines = append(lines, "    pause")
+	lines = append(lines, "    exit /b 1")
+	lines = append(lines, ")")
+	lines = append(lines, "")
+
+	// 获取脚本所在目录
+	lines = append(lines, `set "BASE_DIR=%~dp0"`)
+	lines = append(lines, `set "BASE_DIR=%BASE_DIR:~0,-1%"`)
+	lines = append(lines, "")
+
+	for relPath, dir := range folderPaths {
+		relLinksFile, _ := filepath.Rel(baseDir, filepath.Join(dir, "links.txt"))
+		relSaveDir, _ := filepath.Rel(baseDir, dir)
+
+		displayName := relPath
+		if displayName == "" {
+			displayName = "(根目录)"
+		}
+		lines = append(lines, fmt.Sprintf("echo 处理文件夹: %s", displayName))
+
+		lines = append(lines, fmt.Sprintf(`set "LINKS_FILE=%s"`, relLinksFile))
+
+		if relSaveDir == "." {
+			lines = append(lines, `set "SAVE_DIR=%BASE_DIR%"`)
+		} else {
+			lines = append(lines, fmt.Sprintf(`set "SAVE_DIR=%s\%s"`, "%BASE_DIR%", relSaveDir))
+		}
+
+		// 使用 /s 自动开始下载；若需手动开始请改为 /a
+		lines = append(lines, `for /f "usebackq delims=" %%a in ("!LINKS_FILE!") do (`)
+		lines = append(lines, `    "`+idmPath+`" /d "%%a" /p "!SAVE_DIR!" /a`)
+		lines = append(lines, `)`)
+		lines = append(lines, "")
+	}
+
+	lines = append(lines, "echo 所有链接已添加到 IDM 下载队列并已开始下载。")
+	lines = append(lines, "pause")
+
+	content := strings.Join(lines, "\r\n")
+	bom := []byte{0xEF, 0xBB, 0xBF}
+	data := append(bom, []byte(content)...)
+	return os.WriteFile(scriptPath, data, 0644)
+}
