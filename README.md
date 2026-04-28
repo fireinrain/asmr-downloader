@@ -71,6 +71,7 @@ go build -o asmroner
 ./asmroner export RJ01544940 -o ./downloads
 ./asmroner export hot100 -n 20 -o ./downloads
 ./asmroner export hot100 -n 10 -o ./downloads
+更多内容参考常见问题中的guide
 
 # Web 播放界面
 ./asmroner listen -p 8080 ./syncdata

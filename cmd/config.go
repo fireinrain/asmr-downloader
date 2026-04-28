@@ -37,6 +37,7 @@ config 命令用于初始化或重置本程序的配置文件，并以“交互�
   - 优先媒体格式（如 flac、mp3）
   - 同步/下载的 QPS 限流配置
   - 请求抖动（Jitter）设置，用于分散负载、降低风控风险
+  - IDM 安装路径（可选，用于自动生成下载脚本）
 
 配置文件路径：
   ~/.asmroner/config.toml
@@ -91,6 +92,16 @@ func InitConfig(reader *bufio.Reader, configFile string) {
 	syncWantedSize := prompt(reader, "同步容量限制（1MB/GB/TB/PB，默认：200MB）: ", "200MB")
 	preferMedia := prompt(reader, "优先媒体格式 [all | mp3>wav>flac]（默认：all）: ", "all")
 
+	// ----- 新增：IDM 安装路径 -----
+	idmPath := prompt(reader, "IDM 安装路径（留空则生成手动配置提示，例如 E:\\idm\\IDM\\IDMan.exe）: ", "")
+	// 简单验证文件是否存在（可选）
+	if idmPath != "" {
+		if _, err := os.Stat(idmPath); os.IsNotExist(err) {
+			fmt.Printf("⚠️ 警告：指定的文件 '%s' 不存在，但仍将保存此路径。\n", idmPath)
+		}
+	}
+	// ----------------------------
+
 	syncQPS := promptFloat(reader, "同步请求 QPS（默认：2）: ", 2)
 	syncJitterMin := promptInt(reader, "同步请求抖动最小值（毫秒，默认：100）: ", 100)
 	syncJitterMax := promptInt(reader, "同步请求抖动最大值（毫秒，默认：500）: ", 500)
@@ -110,6 +121,7 @@ func InitConfig(reader *bufio.Reader, configFile string) {
 	viper.Set("downloader.sync_data_folder", syncDataFolder)
 	viper.Set("downloader.sync_wanted_size", syncWantedSize)
 	viper.Set("downloader.prefer_media", preferMedia)
+	viper.Set("downloader.idm_path", idmPath)          // 新增
 
 	viper.Set("limit.sync_qps", syncQPS)
 	viper.Set("limit.sync_jitter_min", syncJitterMin)

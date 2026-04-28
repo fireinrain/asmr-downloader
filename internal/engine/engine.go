@@ -984,13 +984,46 @@ func (m *EngineManager) ExportHotWorks(ctx context.Context, count int, outputBas
 
 // generateIDMScript 生成 idm_download.bat 脚本（放入 scriptsDir）
 func (m *EngineManager) generateIDMScript(baseDir string, folderPaths map[string]string, scriptsDir string) error {
-    // 1. 生成 PowerShell 脚本 (.ps1)
     ps1Path := filepath.Join(scriptsDir, "idm_download.ps1")
     var psLines []string
 
-    idmPath := `E:\idm\IDM\IDMan.exe`   // 修改为你的实际路径
+    // ---------- 从配置读取 IDM 路径 ----------
+    configIdmPath := ""
+    if m.Config != nil {
+        configIdmPath = m.Config.Downloader.IdmPath
+    }
 
-    psLines = append(psLines, `$idmPath = "`+idmPath+`"`)
+    if configIdmPath != "" {
+        // 已配置路径
+        escapedPath := strings.ReplaceAll(configIdmPath, `"`, "`\"")
+        psLines = append(psLines, fmt.Sprintf(`$idmPath = "%s"`, escapedPath))
+        psLines = append(psLines, `if (-not (Test-Path $idmPath)) {`)
+        psLines = append(psLines, `    Write-Host "=============================================" -ForegroundColor Red`)
+        psLines = append(psLines, `    Write-Host "错误：配置的 IDM 路径不存在！" -ForegroundColor Red`)
+        psLines = append(psLines, `    Write-Host "路径: $idmPath"`)
+        psLines = append(psLines, `    Write-Host ""`)
+        psLines = append(psLines, `    Write-Host "请运行 'asmroner config' 重新设置，或编辑本 .ps1 文件中的 ` + "`$idmPath`" + ` 变量。"`)
+        psLines = append(psLines, `    Write-Host "=============================================" -ForegroundColor Red`)
+        psLines = append(psLines, `    Read-Host "按 Enter 键退出"`)
+        psLines = append(psLines, `    exit 1`)
+        psLines = append(psLines, `}`)
+    } else {
+        // 未配置路径
+        psLines = append(psLines, `Write-Host "=============================================" -ForegroundColor Red`)
+        psLines = append(psLines, `Write-Host "IDM 路径未在配置文件中设置！" -ForegroundColor Red`)
+        psLines = append(psLines, `Write-Host ""`)
+        psLines = append(psLines, `Write-Host "请按以下步骤之一操作："`)
+        psLines = append(psLines, `Write-Host "1. 运行 'asmroner config' 重新配置，并输入您的 IDM 安装路径。"`)
+		psLines = append(psLines, `Write-Host '2. 或用记事本打开本 .ps1 文件，将 ` + "`$idmPath = $null`" + ` 行改为实际路径，例如：'`)
+        psLines = append(psLines, `Write-Host '   ` + "`$idmPath = \"E:\\idm\\IDM\\IDMan.exe\"`" + `'`)
+        psLines = append(psLines, `Write-Host "=============================================" -ForegroundColor Red`)
+        psLines = append(psLines, `Read-Host "按 Enter 键退出"`)
+        psLines = append(psLines, `exit 1`)
+    }
+
+    psLines = append(psLines, `Write-Host "IDM 路径: $idmPath"`)
+    psLines = append(psLines, ``)
+
     psLines = append(psLines, `$baseDir = (Get-Item $PSScriptRoot).Parent.FullName`)
     psLines = append(psLines, ``)
 
@@ -1018,6 +1051,8 @@ func (m *EngineManager) generateIDMScript(baseDir string, folderPaths map[string
     psLines = append(psLines, ``)
 
     psLines = append(psLines, `$totalAdded = 0`)
+    psLines = append(psLines, `$maxRetries = 2       # 最多重试2次`)
+    psLines = append(psLines, `$retryDelay = 300     # 重试间隔300毫秒`)
     psLines = append(psLines, `foreach ($entry in $folders.GetEnumerator()) {`)
     psLines = append(psLines, `    $name = $entry.Key`)
     psLines = append(psLines, `    $data = $entry.Value -split '\|'`)
@@ -1029,9 +1064,26 @@ func (m *EngineManager) generateIDMScript(baseDir string, folderPaths map[string
     psLines = append(psLines, `    Write-Host "处理文件夹: $name"`)
     psLines = append(psLines, `    $urls = Get-Content -Path $linksFile | Where-Object { $_.Trim() -ne "" } | ForEach-Object { $_.Trim() }`)
     psLines = append(psLines, `    foreach ($url in $urls) {`)
-    psLines = append(psLines, `        # 使用 Start-Process 不等待，快速添加所有任务`)
-    psLines = append(psLines, `        Start-Process -FilePath $idmPath -ArgumentList '/d', $url, '/p', $saveDir, '/a' -NoNewWindow`)
-    psLines = append(psLines, `        $totalAdded++`)
+    psLines = append(psLines, `        $success = $false`)
+    psLines = append(psLines, `        for ($retry = 0; $retry -le $maxRetries; $retry++) {`)
+    psLines = append(psLines, `            try {`)
+    psLines = append(psLines, `                $proc = Start-Process -FilePath $idmPath -ArgumentList '/d', $url, '/p', $saveDir, '/a' -Wait -NoNewWindow -PassThru`)
+    psLines = append(psLines, `                if ($proc.ExitCode -eq 0) {`)
+    psLines = append(psLines, `                    $success = $true`)
+    psLines = append(psLines, `                    break`)
+    psLines = append(psLines, `                } else {`)
+    psLines = append(psLines, `                    Write-Host "  尝试 $($retry+1)/$($maxRetries+1) 失败，退出码: $($proc.ExitCode)" -ForegroundColor Yellow`)
+    psLines = append(psLines, `                }`)
+    psLines = append(psLines, `            } catch {`)
+    psLines = append(psLines, `                Write-Host "  尝试 $($retry+1)/$($maxRetries+1) 失败: $($_.Exception.Message)" -ForegroundColor Yellow`)
+    psLines = append(psLines, `            }`)
+    psLines = append(psLines, `            if ($retry -lt $maxRetries) { Start-Sleep -Milliseconds $retryDelay }`)
+    psLines = append(psLines, `        }`)
+    psLines = append(psLines, `        if ($success) {`)
+    psLines = append(psLines, `            $totalAdded++`)
+    psLines = append(psLines, `        } else {`)
+    psLines = append(psLines, `            Write-Host "  最终失败: $url" -ForegroundColor Red`)
+    psLines = append(psLines, `        }`)
     psLines = append(psLines, `    }`)
     psLines = append(psLines, `}`)
     psLines = append(psLines, ``)

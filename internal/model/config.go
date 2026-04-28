@@ -18,6 +18,7 @@ type Downloader struct {
 	SyncDataFolder string `mapstructure:"sync_data_folder"`
 	SyncWantedSize string `mapstructure:"sync_wanted_size"`
 	PreferMedia    string `mapstructure:"prefer_media"`
+	IdmPath        string `mapstructure:"idm_path"`
 }
 
 type Limit struct {
