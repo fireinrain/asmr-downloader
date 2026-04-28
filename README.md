@@ -71,6 +71,7 @@ go build -o asmroner
 ./asmroner export RJ01544940 -o ./downloads
 ./asmroner export hot100 -n 20 -o ./downloads
 ./asmroner export hot100 -n 10 -o ./downloads
+更多内容参考常见问题中的guide
 
 # Web 播放界面
 ./asmroner listen -p 8080 ./syncdata
@@ -194,7 +195,7 @@ asmroner/
 
 **搜索结果为空** → 检查查询语法，尝试简化条件
 
-**export指令配套的下载方式** → 参考[guide](/dist/guide.pdf) 
+**export指令配套的下载方式** → 参考[guide](/dist/guide.docx) 
 
 </details>
 
