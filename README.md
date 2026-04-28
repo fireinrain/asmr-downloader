@@ -195,7 +195,7 @@ asmroner/
 
 **搜索结果为空** → 检查查询语法，尝试简化条件
 
-**export指令配套的下载方式** → 参考[guide](/dist/guide.docx) 
+**export指令配套的下载方式** → 参考[guide](/dist/guide.pdf) 
 
 </details>
 
