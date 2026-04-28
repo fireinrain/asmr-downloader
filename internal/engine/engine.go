@@ -900,16 +900,25 @@ func (m *EngineManager) ExportLinksOnly(ctx context.Context, id string, outputBa
 		stats[relPath] = len(urls)
 		folderPaths[relPath] = dir
 	}
+// 创建脚本文档夹
+scriptsDir := filepath.Join(workOutputDir, "download_scripts")
+if err := os.MkdirAll(scriptsDir, 0755); err != nil {
+    return nil, "", fmt.Errorf("创建脚本目录失败: %w", err)
+}
 
-	// 生成 IDM 批处理脚本
-	if err := m.generateIDMScript(workOutputDir, folderPaths); err != nil {
-		logger.Warn("生成 IDM 脚本失败: %v", err)
-	}
+// 生成 IDM 批处理脚本（实际是引导 PowerShell 的 .bat）
+if err := m.generateIDMScript(workOutputDir, folderPaths, scriptsDir); err != nil {
+    logger.Warn("生成 IDM 脚本失败: %v", err)
+}
+// 生成 Aria2 下载脚本（跨平台）
+if err := m.generateAria2Script(workOutputDir, folderPaths, scriptsDir); err != nil {
+    logger.Warn("生成 Aria2 脚本失败: %v", err)
+}
 
-	logger.Info("已导出链接文件，共 %d 个文件夹", len(folderFiles))
-	logger.Info("作品目录: %s", workOutputDir)
+logger.Info("已导出链接文件，共 %d 个文件夹", len(folderFiles))
+logger.Info("作品目录: %s", workOutputDir)
 
-	return stats, workOutputDir, nil
+return stats, workOutputDir, nil
 }
 
 // ExportHotWorks 导出热门榜前 count 个作品的下载链接（增强版：显示标题）
@@ -973,64 +982,187 @@ func (m *EngineManager) ExportHotWorks(ctx context.Context, count int, outputBas
 	return nil
 }
 
-// generateIDMScript 生成 idm_download.bat 脚本，用于将 links.txt 批量导入 IDM
-// 默认使用自动开始下载 (/s)，如需手动开始可改为 /a
-func (m *EngineManager) generateIDMScript(baseDir string, folderPaths map[string]string) error {
-	scriptPath := filepath.Join(baseDir, "idm_download.bat")
+// generateIDMScript 生成 idm_download.bat 脚本（放入 scriptsDir）
+func (m *EngineManager) generateIDMScript(baseDir string, folderPaths map[string]string, scriptsDir string) error {
+    // 1. 生成 PowerShell 脚本 (.ps1)
+    ps1Path := filepath.Join(scriptsDir, "idm_download.ps1")
+    var psLines []string
 
-	// IDM 安装路径（请根据实际位置修改）
-	idmPath := `E:\idm\IDM\IDMan.exe`
+    idmPath := `E:\idm\IDM\IDMan.exe`   // 修改为你的实际路径
 
-	var lines []string
-	lines = append(lines, "@echo off")
-	lines = append(lines, "setlocal enabledelayedexpansion")
-	lines = append(lines, "chcp 65001 > nul")
-	lines = append(lines, "echo 正在添加下载任务到 IDM，请勿关闭此窗口...")
-	lines = append(lines, "")
+    psLines = append(psLines, `$idmPath = "`+idmPath+`"`)
+    psLines = append(psLines, `$baseDir = (Get-Item $PSScriptRoot).Parent.FullName`)
+    psLines = append(psLines, ``)
 
-	// 检查 IDM 是否存在
-	lines = append(lines, fmt.Sprintf(`if not exist "%s" (`, idmPath))
-	lines = append(lines, "    echo 错误：找不到 IDM，请修改脚本中的 idmPath 变量")
-	lines = append(lines, "    pause")
-	lines = append(lines, "    exit /b 1")
-	lines = append(lines, ")")
-	lines = append(lines, "")
+    psLines = append(psLines, `if (!(Test-Path $idmPath)) {`)
+    psLines = append(psLines, `    Write-Host "错误：找不到 IDMan.exe，请修改脚本中的 idmPath 变量"`)
+    psLines = append(psLines, `    Read-Host "按 Enter 键退出"`)
+    psLines = append(psLines, `    exit 1`)
+    psLines = append(psLines, `}`)
+    psLines = append(psLines, ``)
 
-	// 获取脚本所在目录
-	lines = append(lines, `set "BASE_DIR=%~dp0"`)
-	lines = append(lines, `set "BASE_DIR=%BASE_DIR:~0,-1%"`)
-	lines = append(lines, "")
+    psLines = append(psLines, `$folders = @{`)
+    for relPath, dir := range folderPaths {
+        relSaveDir, _ := filepath.Rel(baseDir, dir)
+        linksFile, _ := filepath.Rel(baseDir, filepath.Join(dir, "links.txt"))
+        displayName := relPath
+        if displayName == "" {
+            displayName = "(根目录)"
+        }
+        escName := strings.ReplaceAll(displayName, `"`, "`\"")
+        escSave := strings.ReplaceAll(relSaveDir, `"`, "`\"")
+        escLinks := strings.ReplaceAll(linksFile, `"`, "`\"")
+        psLines = append(psLines, fmt.Sprintf(`    "%s" = "%s|%s";`, escName, escSave, escLinks))
+    }
+    psLines = append(psLines, `}`)
+    psLines = append(psLines, ``)
 
-	for relPath, dir := range folderPaths {
-		relLinksFile, _ := filepath.Rel(baseDir, filepath.Join(dir, "links.txt"))
-		relSaveDir, _ := filepath.Rel(baseDir, dir)
+    psLines = append(psLines, `$totalAdded = 0`)
+    psLines = append(psLines, `foreach ($entry in $folders.GetEnumerator()) {`)
+    psLines = append(psLines, `    $name = $entry.Key`)
+    psLines = append(psLines, `    $data = $entry.Value -split '\|'`)
+    psLines = append(psLines, `    $saveDirRel = $data[0]`)
+    psLines = append(psLines, `    $linksFileRel = $data[1]`)
+    psLines = append(psLines, `    $saveDir   = if ($saveDirRel -eq ".") { $baseDir } else { Join-Path $baseDir $saveDirRel }`)
+    psLines = append(psLines, `    $linksFile = Join-Path $baseDir $linksFileRel`)
+    psLines = append(psLines, ``)
+    psLines = append(psLines, `    Write-Host "处理文件夹: $name"`)
+    psLines = append(psLines, `    $urls = Get-Content -Path $linksFile | Where-Object { $_.Trim() -ne "" } | ForEach-Object { $_.Trim() }`)
+    psLines = append(psLines, `    foreach ($url in $urls) {`)
+    psLines = append(psLines, `        # 使用 Start-Process 不等待，快速添加所有任务`)
+    psLines = append(psLines, `        Start-Process -FilePath $idmPath -ArgumentList '/d', $url, '/p', $saveDir, '/a' -NoNewWindow`)
+    psLines = append(psLines, `        $totalAdded++`)
+    psLines = append(psLines, `    }`)
+    psLines = append(psLines, `}`)
+    psLines = append(psLines, ``)
+    psLines = append(psLines, `Write-Host "===================================="`)
+    psLines = append(psLines, `Write-Host "全部处理完毕。成功添加 $totalAdded 个任务。"`)
+    psLines = append(psLines, `Write-Host "请打开 IDM 主界面查看下载队列。"`)
+    psLines = append(psLines, `Read-Host "按 Enter 键退出"`)
 
-		displayName := relPath
-		if displayName == "" {
-			displayName = "(根目录)"
-		}
-		lines = append(lines, fmt.Sprintf("echo 处理文件夹: %s", displayName))
+    content := strings.Join(psLines, "\r\n")
+    bom := []byte{0xEF, 0xBB, 0xBF}
+    if err := os.WriteFile(ps1Path, append(bom, []byte(content)...), 0644); err != nil {
+        return err
+    }
 
-		lines = append(lines, fmt.Sprintf(`set "LINKS_FILE=%s"`, relLinksFile))
+    // 2. 生成引导用的 .bat 脚本
+    batPath := filepath.Join(scriptsDir, "idm_download.bat")
+    batLines := []string{
+        "@echo off",
+        "chcp 65001 > nul",
+        "echo 正在通过 PowerShell 向 IDM 添加下载任务...",
+        "powershell -ExecutionPolicy Bypass -File \"%~dp0idm_download.ps1\"",
+        "pause",
+    }
+    batContent := strings.Join(batLines, "\r\n")
+    return os.WriteFile(batPath, append(bom, []byte(batContent)...), 0644)
+}
 
-		if relSaveDir == "." {
-			lines = append(lines, `set "SAVE_DIR=%BASE_DIR%"`)
-		} else {
-			lines = append(lines, fmt.Sprintf(`set "SAVE_DIR=%s\%s"`, "%BASE_DIR%", relSaveDir))
-		}
+func (m *EngineManager) generateAria2Script(baseDir string, folderPaths map[string]string, scriptsDir string) error {
+    // 1. 生成 Windows PowerShell 直接下载脚本
+    ps1Path := filepath.Join(scriptsDir, "aria2_download.ps1")
+    var psLines []string
+    psLines = append(psLines, `$aria2 = if (Test-Path "$PSScriptRoot\aria2c.exe") { "$PSScriptRoot\aria2c.exe" } else { "aria2c" }`)
+    psLines = append(psLines, `$baseDir = (Get-Item $PSScriptRoot).Parent.FullName`)
+    psLines = append(psLines, `Set-Location $baseDir`)
+    psLines = append(psLines, `$global:foldersDone = 0`)
 
-		// 使用 /s 自动开始下载；若需手动开始请改为 /a
-		lines = append(lines, `for /f "usebackq delims=" %%a in ("!LINKS_FILE!") do (`)
-		lines = append(lines, `    "`+idmPath+`" /d "%%a" /p "!SAVE_DIR!" /a`)
-		lines = append(lines, `)`)
-		lines = append(lines, "")
-	}
+    psLines = append(psLines, `$folders = @{`)
+    for relPath, dir := range folderPaths {
+        relSaveDir, _ := filepath.Rel(baseDir, dir)
+        linksFile, _ := filepath.Rel(baseDir, filepath.Join(dir, "links.txt"))
+        displayName := relPath
+        if displayName == "" {
+            displayName = "(root)"
+        }
+        savePath := `.\`
+        if relSaveDir != "." {
+            savePath = fmt.Sprintf(`.\%s`, relSaveDir)
+        }
+        escName := strings.ReplaceAll(displayName, `"`, "`\"")
+        escLinks := strings.ReplaceAll(linksFile, `"`, "`\"")
+        escSave := strings.ReplaceAll(savePath, `"`, "`\"")
+        psLines = append(psLines, fmt.Sprintf(`    "%s" = @("%s", "%s");`, escName, escLinks, escSave))
+    }
+    psLines = append(psLines, `}`)
+    psLines = append(psLines, ``)
 
-	lines = append(lines, "echo 所有链接已添加到 IDM 下载队列并已开始下载。")
-	lines = append(lines, "pause")
+    psLines = append(psLines, `Write-Host "Starting Aria2 direct downloads..."`)
+    psLines = append(psLines, `Write-Host "===================================="`)
+    psLines = append(psLines, `foreach ($entry in $folders.GetEnumerator()) {`)
+    psLines = append(psLines, `    $name = $entry.Key`)
+    psLines = append(psLines, `    $linksFile = $entry.Value[0]`)
+    psLines = append(psLines, `    $saveDir   = $entry.Value[1]`)
+    psLines = append(psLines, `    Write-Host "Downloading: $name"`)
 
-	content := strings.Join(lines, "\r\n")
-	bom := []byte{0xEF, 0xBB, 0xBF}
-	data := append(bom, []byte(content)...)
-	return os.WriteFile(scriptPath, data, 0644)
+    psLines = append(psLines, `    $commonArgs = @("--max-concurrent-downloads=2", "--max-connection-per-server=4", "--split=4", "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "--enable-http-keep-alive=false", "--check-certificate=false", "--console-log-level=notice", "--retry-wait=10", "--max-tries=5", "--timeout=30")`)
+    psLines = append(psLines, `    $specificArgs = @("--dir=$saveDir", "--input-file=$linksFile")`)
+    psLines = append(psLines, `    $args = $commonArgs + $specificArgs`)
+
+    psLines = append(psLines, `    try {`)
+    psLines = append(psLines, `        $process = Start-Process -FilePath $aria2 -ArgumentList $args -Wait -NoNewWindow -PassThru`)
+    psLines = append(psLines, `        if ($process.ExitCode -ne 0) {`)
+    psLines = append(psLines, `            Write-Host "  Warning: aria2c exited with code $($process.ExitCode)" -ForegroundColor Yellow`)
+    psLines = append(psLines, `        }`)
+    psLines = append(psLines, `        $global:foldersDone++`)
+    psLines = append(psLines, `    } catch {`)
+    psLines = append(psLines, `        Write-Host "  FAILED to start aria2c: $($_.Exception.Message)" -ForegroundColor Red`)
+    psLines = append(psLines, `    }`)
+    psLines = append(psLines, `}`)
+    psLines = append(psLines, `Write-Host "===================================="`)
+    psLines = append(psLines, `Write-Host "Processed $($global:foldersDone) folder(s)."`)
+    psLines = append(psLines, `Write-Host "If some files failed, simply re-run this script to retry."`)
+    psLines = append(psLines, `Read-Host "Press Enter to exit"`)
+
+    content := strings.Join(psLines, "\r\n")
+    bom := []byte{0xEF, 0xBB, 0xBF}
+    if err := os.WriteFile(ps1Path, append(bom, []byte(content)...), 0644); err != nil {
+        return err
+    }
+
+    // 2. 引导用的 .bat 脚本
+    batPath := filepath.Join(scriptsDir, "aria2_download.bat")
+    batLines := []string{
+        "@echo off",
+        "chcp 65001 > nul",
+        "echo Starting Aria2 downloads via PowerShell...",
+        "powershell -ExecutionPolicy Bypass -File \"%~dp0aria2_download.ps1\"",
+        "pause",
+    }
+    batContent := strings.Join(batLines, "\r\n")
+    if err := os.WriteFile(batPath, append(bom, []byte(batContent)...), 0644); err != nil {
+        return err
+    }
+
+    // 3. Linux / macOS Shell 脚本 (原来的 RPC 方式)
+    shPath := filepath.Join(scriptsDir, "aria2_download.sh")
+    var shLines []string
+    shLines = append(shLines, "#!/bin/bash")
+    shLines = append(shLines, `BASE_DIR="$(cd "$(dirname "$0")/.." && pwd)"`)
+    rpcPort := "6800"
+    shLines = append(shLines, fmt.Sprintf("RPC_URL=\"http://localhost:%s/jsonrpc\"", rpcPort))
+    shLines = append(shLines, "")
+    shLines = append(shLines, "echo \"Make sure aria2 daemon is running on port " + rpcPort + "\"")
+    shLines = append(shLines, "")
+    for relPath, dir := range folderPaths {
+        relLinksFile, _ := filepath.Rel(baseDir, filepath.Join(dir, "links.txt"))
+        relSaveDir, _ := filepath.Rel(baseDir, dir)
+        displayName := relPath
+        if displayName == "" {
+            displayName = "(root)"
+        }
+        saveDir := `"$BASE_DIR"`
+        if relSaveDir != "." {
+            saveDir = fmt.Sprintf(`"$BASE_DIR/%s"`, relSaveDir)
+        }
+        shLines = append(shLines, fmt.Sprintf("echo \"Processing: %s\"", displayName))
+        shLines = append(shLines, fmt.Sprintf(
+            "curl -s -X POST \"$RPC_URL\" -H \"Content-Type: application/json\" -d '{\"jsonrpc\":\"2.0\",\"method\":\"aria2.addUri\",\"id\":1,\"params\":[[$(cat \"$BASE_DIR/%s\" | sed '/^$/d' | paste -sd, - | sed 's/,/\",\"/g')],{\"dir\":%s,\"max-connection-per-server\":\"4\",\"split\":\"4\",\"continue\":\"true\"}]}'",
+            relLinksFile, saveDir,
+        ))
+        shLines = append(shLines, "")
+    }
+    shLines = append(shLines, "echo \"All links added. Check AriaNg.\"")
+    return os.WriteFile(shPath, []byte(strings.Join(shLines, "\n")), 0755)
 }

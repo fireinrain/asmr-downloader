@@ -194,7 +194,7 @@ asmroner/
 
 **搜索结果为空** → 检查查询语法，尝试简化条件
 
-**bat文件运行时找不到idm路径** → 修改 engine.go 文件中982行左右的idm路径（应该为你计算机中idm应用的路径）
+**export指令配套的下载方式** → 参考[guide](/dist/guide.pdf) 
 
 </details>
 
