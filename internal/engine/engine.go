@@ -344,7 +344,7 @@ func (m *EngineManager) filterTargetAudioFormat(urls [][]string) [][]string {
 }
 
 func (m *EngineManager) ensureDirExists(tracks []model.Track, storeBaseDir string) ([][]string, error) {
-	// 注意：不能对完整路径做 NormalDirPathStr 净化——
+	// 注意：不能对完整路径做 SanitizeFileName 净化——
 	// Windows 绝对路径盘符（如 D:\）中的冒号会被误替换，导致文件写入错误位置
 	path := storeBaseDir
 	_ = os.MkdirAll(path, os.ModePerm)
@@ -353,10 +353,16 @@ func (m *EngineManager) ensureDirExists(tracks []model.Track, storeBaseDir strin
 
 	for _, t := range tracks {
 		if t.Type != "folder" {
-			needDownloadUrls = append(needDownloadUrls, []string{t.MediaDownloadURL, path, t.Title})
+			// 音轨文件名同样需要净化，否则含非法字符的标题会导致写入失败
+			needDownloadUrls = append(needDownloadUrls, []string{t.MediaDownloadURL, path, utils.SanitizeFileName(t.Title)})
 		} else {
 			// 仅对音轨（文件夹）标题做净化，路径本身已是合法组件拼接
-			subDir := filepath.Join(path, utils.NormalDirPathStr(strings.ReplaceAll(t.Title, "/", "")))
+			name := utils.SanitizeFileName(t.Title)
+			if name == "" {
+				// 标题全是非法字符/空白时回退固定名，避免子目录塌缩进父目录
+				name = "untitled"
+			}
+			subDir := filepath.Join(path, name)
 			needDownUrl, _ := m.ensureDirExists(t.Children, subDir)
 			needDownloadUrls = append(needDownloadUrls, needDownUrl...)
 		}

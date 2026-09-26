@@ -33,13 +33,8 @@ func BuildFolderName(format, workID, release string, hasSubtitle bool, title str
 		"{title}", title,
 	).Replace(format)
 
-	// 净化：先移除 /（历史行为：标题中的 / 直接去掉，同时防止用户格式产生嵌套目录）
-	name = strings.ReplaceAll(name, "/", "")
-	// 再替换其余文件名非法字符，与 NormalDirPathStr 保持一致
-	for _, str := range []string{"?", "<", ">", ":", "*", "|", " ", "\""} {
-		name = strings.ReplaceAll(name, str, "_")
-	}
-	name = strings.TrimSpace(name)
+	// 整体做文件名非法字符净化（含路径分隔符移除，防止产生嵌套目录）
+	name = SanitizeFileName(name)
 
 	// 格式串全是非法字符等极端情况，回退默认格式
 	if name == "" {

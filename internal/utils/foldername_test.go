@@ -2,6 +2,30 @@ package utils
 
 import "testing"
 
+// TestSanitizeFileName 表驱动测试：路径分隔符移除、非法字符替换、空白修剪
+func TestSanitizeFileName(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"empty input", "", ""},
+		{"illegal chars replaced", `a?b*c<d>`, "a_b_c_d_"},
+		{"colon replaced", "a:b", "a_b"},
+		{"both separators removed", `dir\sub/name`, "dirsubname"},
+		{"spaces become underscores", " a b ", "_a_b_"},
+		{"only illegal chars", `<>?:*|"`, "_______"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := SanitizeFileName(tt.in); got != tt.want {
+				t.Errorf("SanitizeFileName(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestBuildFolderName 表驱动测试：覆盖默认格式兼容、自定义格式与净化逻辑
 func TestBuildFolderName(t *testing.T) {
 	tests := []struct {
@@ -62,6 +86,15 @@ func TestBuildFolderName(t *testing.T) {
 		{
 			name:        "slash in format produces no nested dir",
 			format:      "{rjid}/{title}",
+			workID:      "RJ123",
+			release:     "2023-04-01",
+			hasSubtitle: false,
+			title:       "T",
+			want:        "RJ123T",
+		},
+		{
+			name:        "backslash in format produces no nested dir",
+			format:      `{rjid}\{title}`,
 			workID:      "RJ123",
 			release:     "2023-04-01",
 			hasSubtitle: false,

@@ -96,12 +96,15 @@ func IsValidDlsiteID(id string) (isValid bool, prefix string, number string, err
 
 }
 
-// NormalDirPathStr 去除可能导致目录创建失败的字符串
-func NormalDirPathStr(path string) string {
+// SanitizeFileName 净化文件/目录名：先移除路径分隔符 / \（防止产生嵌套目录），
+// 再替换文件名非法字符（Windows 保留字符），最后去除首尾空白。
+// 返回空字符串时由调用方决定回退名称。
+func SanitizeFileName(name string) string {
+	name = strings.NewReplacer("/", "", "\\", "").Replace(name)
 	for _, str := range []string{"?", "<", ">", ":", "*", "|", " ", "\""} {
-		path = strings.ReplaceAll(path, str, "_")
+		name = strings.ReplaceAll(name, str, "_")
 	}
-	return strings.TrimSpace(path)
+	return strings.TrimSpace(name)
 }
 
 func FilterList[T any](list []T, keep func(T) bool) []T {
