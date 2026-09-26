@@ -241,21 +241,13 @@ func (m *EngineManager) DownloadOne(ctx context.Context, id string, storeBaseDir
 	}
 	task.Info("音轨数: %d", len(tracks))
 
-	hasSubtitle := ""
-	if workInfo.HasSubtitle {
-		hasSubtitle = "sub"
-	} else {
-		hasSubtitle = "nosub"
-	}
-
 	// 新建下载目录名
-	folderName := fmt.Sprintf(
-		"%s%s-%s-%s-%s",
-		strings.ToUpper(prefix),
-		number,
-		strings.ReplaceAll(workInfo.Release, "-", ""),
-		hasSubtitle,
-		utils.NormalDirPathStr(strings.ReplaceAll(workInfo.Title, "/", "")),
+	folderName := utils.BuildFolderName(
+		model.AppConfig.Downloader.FolderNameFormat,
+		strings.ToUpper(prefix)+number,
+		workInfo.Release,
+		workInfo.HasSubtitle,
+		workInfo.Title,
 	)
 	storeFileDir := filepath.Join(storeBaseDir, folderName)
 	defer func() {
@@ -840,19 +832,12 @@ func (m *EngineManager) ExportLinksOnly(ctx context.Context, id string, outputBa
 	}
 
 	// 构建作品文件夹名（与下载逻辑一致）
-	hasSubtitle := ""
-	if workInfo.HasSubtitle {
-		hasSubtitle = "sub"
-	} else {
-		hasSubtitle = "nosub"
-	}
-	folderName := fmt.Sprintf(
-		"%s%s-%s-%s-%s",
-		strings.ToUpper(prefix),
-		number,
-		strings.ReplaceAll(workInfo.Release, "-", ""),
-		hasSubtitle,
-		utils.NormalDirPathStr(strings.ReplaceAll(workInfo.Title, "/", "")),
+	folderName := utils.BuildFolderName(
+		model.AppConfig.Downloader.FolderNameFormat,
+		strings.ToUpper(prefix)+number,
+		workInfo.Release,
+		workInfo.HasSubtitle,
+		workInfo.Title,
 	)
 
 	// 确定输出根目录

@@ -19,6 +19,9 @@ type Downloader struct {
 	SyncWantedSize string `mapstructure:"sync_wanted_size"`
 	PreferMedia    string `mapstructure:"prefer_media"`
 	IdmPath        string `mapstructure:"idm_path"`
+	// 下载目录命名格式，占位符: {rjid} {date} {subtitle} {title}
+	// 为空时使用 consts.DefaultFolderNameFormat（与历史版本一致）
+	FolderNameFormat string `mapstructure:"folder_name_format"`
 }
 
 type Limit struct {

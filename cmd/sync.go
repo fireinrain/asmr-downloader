@@ -184,17 +184,12 @@ func doBatchSyncDownload(downDir string, batchSize int, batchCount int, download
 			logger.Warn("无效的作品ID: %s，跳过...", work.SourceID)
 			continue
 		}
-		hasSubtitle := "nosub"
-		if work.HasSubtitle {
-			hasSubtitle = "sub"
-		}
-		folderName := fmt.Sprintf(
-			"%s%s-%s-%s-%s",
-			strings.ToUpper(prefix),
-			number,
-			strings.ReplaceAll(work.Release, "-", ""),
-			hasSubtitle,
-			utils.NormalDirPathStr(strings.ReplaceAll(work.Title, "/", "")),
+		folderName := utils.BuildFolderName(
+			model.AppConfig.Downloader.FolderNameFormat,
+			strings.ToUpper(prefix)+number,
+			work.Release,
+			work.HasSubtitle,
+			work.Title,
 		)
 
 		workSyncInfo := model.WorkSyncInfo{
