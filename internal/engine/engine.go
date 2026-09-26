@@ -344,8 +344,9 @@ func (m *EngineManager) filterTargetAudioFormat(urls [][]string) [][]string {
 }
 
 func (m *EngineManager) ensureDirExists(tracks []model.Track, storeBaseDir string) ([][]string, error) {
+	// 注意：不能对完整路径做 NormalDirPathStr 净化——
+	// Windows 绝对路径盘符（如 D:\）中的冒号会被误替换，导致文件写入错误位置
 	path := storeBaseDir
-	path = utils.NormalDirPathStr(path)
 	_ = os.MkdirAll(path, os.ModePerm)
 	//url,path,title
 	var needDownloadUrls [][]string
@@ -354,7 +355,9 @@ func (m *EngineManager) ensureDirExists(tracks []model.Track, storeBaseDir strin
 		if t.Type != "folder" {
 			needDownloadUrls = append(needDownloadUrls, []string{t.MediaDownloadURL, path, t.Title})
 		} else {
-			needDownUrl, _ := m.ensureDirExists(t.Children, fmt.Sprintf("%s/%s", path, t.Title))
+			// 仅对音轨（文件夹）标题做净化，路径本身已是合法组件拼接
+			subDir := filepath.Join(path, utils.NormalDirPathStr(strings.ReplaceAll(t.Title, "/", "")))
+			needDownUrl, _ := m.ensureDirExists(t.Children, subDir)
 			needDownloadUrls = append(needDownloadUrls, needDownUrl...)
 		}
 	}
