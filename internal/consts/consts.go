@@ -14,12 +14,12 @@ const DbName = "asmroner.db"
 // FailedLogName 下载错误日志文件名
 const FailedLogName = "download_errors.log"
 
-// asmr.one id类型
-var AsmrOneIDRegex = regexp.MustCompile(`(?i)^(RJ|VJ|BJ|AJ|CJ|DL|NP|AL|KN)\d+$`)
-
 // DefaultFolderNameFormat 默认的作品下载目录命名格式
 // 占位符: {rjid} {date} {subtitle} {title}，与历史版本的硬编码命名保持一致
 const DefaultFolderNameFormat = "{rjid}-{date}-{subtitle}-{title}"
+
+// asmr.one id类型
+var AsmrOneIDRegex = regexp.MustCompile(`(?i)^(RJ|VJ|BJ|AJ|CJ|DL|NP|AL|KN)\d+$`)
 
 // UserAgent 自定义User-Agent
 var UserAgents = []string{

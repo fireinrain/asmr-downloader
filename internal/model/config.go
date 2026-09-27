@@ -18,9 +18,13 @@ type Downloader struct {
 	SyncDataFolder string `mapstructure:"sync_data_folder"`
 	SyncWantedSize string `mapstructure:"sync_wanted_size"`
 	PreferMedia    string `mapstructure:"prefer_media"`
-	IdmPath        string `mapstructure:"idm_path"`
-	// 下载目录命名格式，占位符: {rjid} {date} {subtitle} {title}
-	// 为空时使用 consts.DefaultFolderNameFormat（与历史版本一致）
+	// 扩展名白名单，如 ".mp3,.jpg"（逗号分隔，可不带点，大小写不敏感）；空不筛选
+	// 支持嵌套扩展名：".vtt" 命中所有字幕，".mp3.vtt" 只命中 mp3 的字幕
+	IncludeExt string `mapstructure:"include_ext"`
+	// 扩展名黑名单，如 ".mp4,.webm"；空不过滤，与白名单同时配置时先白后黑
+	ExcludeExt string `mapstructure:"exclude_ext"`
+	IdmPath    string `mapstructure:"idm_path"`
+	// 下载目录命名格式，占位符: {rjid} {date} {subtitle} {title}；空用默认值
 	FolderNameFormat string `mapstructure:"folder_name_format"`
 }
 

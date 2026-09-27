@@ -120,6 +120,11 @@ max_retries = 3
 sync_data_folder = "./syncdata"
 sync_wanted_size = "200MB"  # 同步容量限制
 prefer_media = "all"        # all | mp3>wav>flac
+include_ext = ""            # 扩展名白名单，如 ".mp3,.png,.jpg"（只下命中的，留空不筛选）
+exclude_ext = ""            # 扩展名黑名单，如 ".mp4,.webm"（排除命中的，留空不过滤）
+                            # 精确后缀匹配，所见即所得：
+                            # ".vtt" 表示所有字幕（两种 vtt 视为同一种文件），
+                            # ".mp3.vtt" 只表示 mp3 的字幕，如只要 mp3 及其字幕用 ".mp3,.mp3.vtt"
 
 [limit]
 sync_qps = 2

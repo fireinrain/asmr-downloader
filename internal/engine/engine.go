@@ -260,6 +260,20 @@ func (m *EngineManager) DownloadOne(ctx context.Context, id string, storeBaseDir
 	}
 	//过滤掉不需要的格式
 	needDownloadUrls = m.filterTargetAudioFormat(needDownloadUrls)
+	// 按扩展名白名单筛选（downloader.include_ext）
+	if before := len(needDownloadUrls); before > 0 {
+		needDownloadUrls = m.filterIncludeExt(needDownloadUrls)
+		if kept := len(needDownloadUrls); kept < before {
+			task.Info("已按 include_ext 保留 %d/%d 个文件", kept, before)
+		}
+	}
+	// 按扩展名黑名单排除（downloader.exclude_ext）
+	if before := len(needDownloadUrls); before > 0 {
+		needDownloadUrls = m.filterExcludeExt(needDownloadUrls)
+		if skipped := before - len(needDownloadUrls); skipped > 0 {
+			task.Info("已按 exclude_ext 排除 %d 个文件", skipped)
+		}
+	}
 	//并行下载
 	group := m.DownloadPool.NewGroup()
 	for _, url := range needDownloadUrls {
@@ -275,9 +289,9 @@ func (m *EngineManager) DownloadOne(ctx context.Context, id string, storeBaseDir
 }
 
 func (m *EngineManager) filterTargetAudioFormat(urls [][]string) [][]string {
-	// 1. 如果配置是 all，直接返回原文件列表
+	// 1. 配置为空（用户未配置该项）或 all，直接返回原文件列表
 	config := m.Config.Downloader.PreferMedia
-	if strings.ToLower(config) == "all" {
+	if lc := strings.ToLower(strings.TrimSpace(config)); lc == "" || lc == "all" {
 		return urls
 	}
 	// 2. 解析优先规则（例如 "mp3>wav>flac"）
@@ -341,6 +355,67 @@ func (m *EngineManager) filterTargetAudioFormat(urls [][]string) [][]string {
 	// 如果一个也没选到，则返回 groupB
 	return groupB
 
+}
+
+// parseExtList 解析逗号分隔的扩展名配置为集合（小写、自动补点），如 ".mp4,.webm"
+func parseExtList(raw string) map[string]bool {
+	set := make(map[string]bool)
+	for _, part := range strings.Split(strings.ToLower(raw), ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if !strings.HasPrefix(part, ".") {
+			part = "." + part
+		}
+		set[part] = true
+	}
+	return set
+}
+
+// hitExtSet 文件名（已小写）是否以后缀命中集合；后缀精确匹配，支持 ".mp3.vtt" 嵌套扩展名
+func hitExtSet(lf string, set map[string]bool) bool {
+	if len(set) == 0 {
+		return false
+	}
+	for ext := range set {
+		if strings.HasSuffix(lf, ext) {
+			return true
+		}
+	}
+	return false
+}
+
+// filterIncludeExt 按白名单 downloader.include_ext 保留命中的文件，空配置原样返回
+func (m *EngineManager) filterIncludeExt(urls [][]string) [][]string {
+	set := parseExtList(m.Config.Downloader.IncludeExt)
+	if len(set) == 0 {
+		return urls
+	}
+
+	kept := make([][]string, 0, len(urls))
+	for _, f := range urls {
+		if hitExtSet(strings.ToLower(f[2]), set) {
+			kept = append(kept, f)
+		}
+	}
+	return kept
+}
+
+// filterExcludeExt 按黑名单 downloader.exclude_ext 剔除命中的文件，空配置原样返回
+func (m *EngineManager) filterExcludeExt(urls [][]string) [][]string {
+	set := parseExtList(m.Config.Downloader.ExcludeExt)
+	if len(set) == 0 {
+		return urls
+	}
+
+	kept := make([][]string, 0, len(urls))
+	for _, f := range urls {
+		if !hitExtSet(strings.ToLower(f[2]), set) {
+			kept = append(kept, f)
+		}
+	}
+	return kept
 }
 
 func (m *EngineManager) ensureDirExists(tracks []model.Track, storeBaseDir string) ([][]string, error) {
