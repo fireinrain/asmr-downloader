@@ -17,6 +17,10 @@ const FailedLogName = "download_errors.log"
 // asmr.one id类型
 var AsmrOneIDRegex = regexp.MustCompile(`(?i)^(RJ|VJ|BJ|AJ|CJ|DL|NP|AL|KN)\d+$`)
 
+// DefaultFolderNameFormat 默认的作品下载目录命名格式
+// 占位符: {rjid} {date} {subtitle} {title}，与历史版本的硬编码命名保持一致
+const DefaultFolderNameFormat = "{rjid}-{date}-{subtitle}-{title}"
+
 // UserAgent 自定义User-Agent
 var UserAgents = []string{
 	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36 Edg/139.0.0.0",

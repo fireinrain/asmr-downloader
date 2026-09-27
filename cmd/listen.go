@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"asmroner/internal/consts"
 	"asmroner/internal/database"
 	"asmroner/internal/logger"
 	"asmroner/internal/model"
@@ -12,7 +13,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -245,21 +245,14 @@ func buildInmemoryDb(asbDataFolder string) *gorm.DB {
 	if err != nil {
 		log.Fatalf("Failed to read directory: %v", err)
 	}
-	//下载的数据目录中的文件名必须符合
-	// xxx-8位数字-[sub/nosub]-xxxxx
-	r := regexp.MustCompile(`^[^-\s]+-\d{8}-(sub|nosub)-[^-\s]+$`)
-
+	//下载的数据目录命名格式可由用户配置（issue #46），
+	// 这里用容错解析兼容旧格式与新格式
 	for _, entry := range entries {
 		if entry.IsDir() {
-			if !r.MatchString(entry.Name()) {
+			mediaId, date, _, hasSubtitles, title, ok := parseFolderName(entry.Name())
+			if !ok {
 				continue
 			}
-			//切分信息
-			splitStr := strings.Split(entry.Name(), "-")
-			mediaId := splitStr[0]
-			date := splitStr[1]
-			hasSubtitles := splitStr[2]
-			title := splitStr[3]
 
 			directory, err := scanDirectory(filepath.Join(asbDataFolder, entry.Name()))
 			if err != nil {
@@ -269,7 +262,7 @@ func buildInmemoryDb(asbDataFolder string) *gorm.DB {
 			folder := FolderInfo{
 				MediaId:      mediaId,
 				Date:         date,
-				HasSubtitles: hasSubtitles == "sub",
+				HasSubtitles: hasSubtitles,
 				Title:        title,
 				Name:         entry.Name(),
 				Files:        directory,
@@ -283,6 +276,59 @@ func buildInmemoryDb(asbDataFolder string) *gorm.DB {
 	}
 
 	return db
+}
+
+// parseFolderName 尽力从目录名中解析作品信息，兼容新旧命名格式（issue #46）。
+// 仅要求首段是合法作品ID；date/subtitle/title 允许缺失。
+// ok=false 表示无法识别（非作品目录，应跳过）。
+func parseFolderName(name string) (mediaId, date, subtitle string, hasSub bool, title string, ok bool) {
+	tokens := strings.Split(name, "-")
+	if len(tokens) == 0 {
+		return "", "", "", false, "", false
+	}
+
+	// 首段必须是合法作品ID（唯一的硬性过滤条件）
+	if !consts.AsmrOneIDRegex.MatchString(tokens[0]) {
+		return "", "", "", false, "", false
+	}
+	mediaId = tokens[0]
+
+	// 判断日期段：连续8位数字
+	isDate := func(s string) bool {
+		if len(s) != 8 {
+			return false
+		}
+		for _, c := range s {
+			if c < '0' || c > '9' {
+				return false
+			}
+		}
+		return true
+	}
+
+	rest := tokens[1:]
+	// 在剩余 token 中寻找 sub/nosub 段
+	for i, tok := range rest {
+		if tok != "sub" && tok != "nosub" {
+			continue
+		}
+		subtitle = tok
+		hasSub = tok == "sub"
+		if i > 0 && isDate(rest[0]) {
+			date = rest[0]
+		}
+		title = strings.Join(rest[i+1:], "-")
+		return mediaId, date, subtitle, hasSub, title, true
+	}
+
+	// 没有 sub/nosub 段：date 在首则 title 在次，否则整段视为 title
+	if len(rest) > 0 && isDate(rest[0]) {
+		date = rest[0]
+		title = strings.Join(rest[1:], "-")
+	} else {
+		title = strings.Join(rest, "-")
+	}
+	return mediaId, date, subtitle, hasSub, title, true
 }
 
 // getFolderInfoPage 分页查询文件夹信息

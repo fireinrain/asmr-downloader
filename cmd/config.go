@@ -35,6 +35,7 @@ config 命令用于初始化或重置本程序的配置文件，并以“交互�
   - 同步数据存放目录
   - 同步容量限制（如 200MB、2GB）
   - 优先媒体格式（如 flac、mp3）
+  - 下载目录命名格式（占位符 {rjid} {date} {subtitle} {title}）
   - 同步/下载的 QPS 限流配置
   - 请求抖动（Jitter）设置，用于分散负载、降低风控风险
   - IDM 安装路径（可选，用于自动生成下载脚本）
@@ -92,6 +93,15 @@ func InitConfig(reader *bufio.Reader, configFile string) {
 	syncWantedSize := prompt(reader, "同步容量限制（1MB/GB/TB/PB，默认：200MB）: ", "200MB")
 	preferMedia := prompt(reader, "优先媒体格式 [all | mp3>wav>flac]（默认：all）: ", "all")
 
+	// ----- 新增：下载目录命名格式 -----
+	folderNameFormat := prompt(reader,
+		fmt.Sprintf("下载目录命名格式（占位符: {rjid} {date} {subtitle} {title}，默认: %s）: ", consts.DefaultFolderNameFormat),
+		consts.DefaultFolderNameFormat)
+	if !strings.Contains(folderNameFormat, "{rjid}") {
+		fmt.Println("⚠️ 警告：格式中未包含 {rjid}，不同作品的下载目录可能相互冲突。")
+	}
+	// ----------------------------
+
 	// ----- 新增：IDM 安装路径 -----
 	idmPath := prompt(reader, "IDM 安装路径（留空则生成手动配置提示，例如 E:\\idm\\IDM\\IDMan.exe）: ", "")
 	// 简单验证文件是否存在（可选）
@@ -121,7 +131,9 @@ func InitConfig(reader *bufio.Reader, configFile string) {
 	viper.Set("downloader.sync_data_folder", syncDataFolder)
 	viper.Set("downloader.sync_wanted_size", syncWantedSize)
 	viper.Set("downloader.prefer_media", preferMedia)
-	viper.Set("downloader.idm_path", idmPath)          // 新增
+	viper.Set("downloader.idm_path", idmPath)
+	// viper key 必须与 model.Downloader 的 mapstructure tag 完全一致
+	viper.Set("downloader.folder_name_format", folderNameFormat)
 
 	viper.Set("limit.sync_qps", syncQPS)
 	viper.Set("limit.sync_jitter_min", syncJitterMin)

@@ -241,21 +241,13 @@ func (m *EngineManager) DownloadOne(ctx context.Context, id string, storeBaseDir
 	}
 	task.Info("音轨数: %d", len(tracks))
 
-	hasSubtitle := ""
-	if workInfo.HasSubtitle {
-		hasSubtitle = "sub"
-	} else {
-		hasSubtitle = "nosub"
-	}
-
 	// 新建下载目录名
-	folderName := fmt.Sprintf(
-		"%s%s-%s-%s-%s",
-		strings.ToUpper(prefix),
-		number,
-		strings.ReplaceAll(workInfo.Release, "-", ""),
-		hasSubtitle,
-		utils.NormalDirPathStr(strings.ReplaceAll(workInfo.Title, "/", "")),
+	folderName := utils.BuildFolderName(
+		model.AppConfig.Downloader.FolderNameFormat,
+		strings.ToUpper(prefix)+number,
+		workInfo.Release,
+		workInfo.HasSubtitle,
+		workInfo.Title,
 	)
 	storeFileDir := filepath.Join(storeBaseDir, folderName)
 	defer func() {
@@ -352,17 +344,26 @@ func (m *EngineManager) filterTargetAudioFormat(urls [][]string) [][]string {
 }
 
 func (m *EngineManager) ensureDirExists(tracks []model.Track, storeBaseDir string) ([][]string, error) {
+	// 注意：不能对完整路径做 SanitizeFileName 净化——
+	// Windows 绝对路径盘符（如 D:\）中的冒号会被误替换，导致文件写入错误位置
 	path := storeBaseDir
-	path = utils.NormalDirPathStr(path)
 	_ = os.MkdirAll(path, os.ModePerm)
 	//url,path,title
 	var needDownloadUrls [][]string
 
 	for _, t := range tracks {
 		if t.Type != "folder" {
-			needDownloadUrls = append(needDownloadUrls, []string{t.MediaDownloadURL, path, t.Title})
+			// 音轨文件名同样需要净化，否则含非法字符的标题会导致写入失败
+			needDownloadUrls = append(needDownloadUrls, []string{t.MediaDownloadURL, path, utils.SanitizeFileName(t.Title)})
 		} else {
-			needDownUrl, _ := m.ensureDirExists(t.Children, fmt.Sprintf("%s/%s", path, t.Title))
+			// 仅对音轨（文件夹）标题做净化，路径本身已是合法组件拼接
+			name := utils.SanitizeFileName(t.Title)
+			if name == "" {
+				// 标题全是非法字符/空白时回退固定名，避免子目录塌缩进父目录
+				name = "untitled"
+			}
+			subDir := filepath.Join(path, name)
+			needDownUrl, _ := m.ensureDirExists(t.Children, subDir)
 			needDownloadUrls = append(needDownloadUrls, needDownUrl...)
 		}
 	}
@@ -840,19 +841,12 @@ func (m *EngineManager) ExportLinksOnly(ctx context.Context, id string, outputBa
 	}
 
 	// 构建作品文件夹名（与下载逻辑一致）
-	hasSubtitle := ""
-	if workInfo.HasSubtitle {
-		hasSubtitle = "sub"
-	} else {
-		hasSubtitle = "nosub"
-	}
-	folderName := fmt.Sprintf(
-		"%s%s-%s-%s-%s",
-		strings.ToUpper(prefix),
-		number,
-		strings.ReplaceAll(workInfo.Release, "-", ""),
-		hasSubtitle,
-		utils.NormalDirPathStr(strings.ReplaceAll(workInfo.Title, "/", "")),
+	folderName := utils.BuildFolderName(
+		model.AppConfig.Downloader.FolderNameFormat,
+		strings.ToUpper(prefix)+number,
+		workInfo.Release,
+		workInfo.HasSubtitle,
+		workInfo.Title,
 	)
 
 	// 确定输出根目录
