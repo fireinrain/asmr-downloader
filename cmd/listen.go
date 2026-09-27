@@ -117,6 +117,45 @@ listen 命令用于启动一个 Web UI 服务器，用于展示和播放下载�
 				c.JSON(http.StatusInternalServerError, wrapResponse(err))
 				return
 			}
+			// 补充音频计数
+			for i := range infos {
+				count := 0
+				for _, f := range infos[i].Files {
+					if !f.IsDir && isAudioFile(f.Name) {
+						count++
+					}
+				}
+				infos[i].AudioCount = count
+			}
+			c.JSON(http.StatusOK, wrapResponse(gin.H{
+				"infos":    infos,
+				"total":    total,
+				"page":     page,
+				"pageSize": pageSize,
+			}))
+		})
+
+		// API: 搜索
+		r.GET("/api/search", func(c *gin.Context) {
+			q := strings.TrimSpace(c.Query("q"))
+			page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+			pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+
+			if q == "" {
+				c.JSON(http.StatusOK, wrapResponse(gin.H{
+					"infos":    []FolderInfo{},
+					"total":    0,
+					"page":     page,
+					"pageSize": pageSize,
+				}))
+				return
+			}
+
+			infos, total, err := searchFolderInfo(db, q, page, pageSize)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, wrapResponse(err))
+				return
+			}
 			c.JSON(http.StatusOK, wrapResponse(gin.H{
 				"infos":    infos,
 				"total":    total,
@@ -179,7 +218,10 @@ type FolderInfo struct {
 	Date         string     `json:"date"`
 	HasSubtitles bool       `json:"hasSubtitles"`
 	Title        string     `json:"title"`
+	Vas          string     `json:"vas"`
 	BaseDir      string     `json:"baseDir"`
+	CoverPath    string     `json:"coverPath"`
+	AudioCount   int        `gorm:"-" json:"audioCount"`
 	Files        []FileInfo `gorm:"foreignKey:FolderId" json:"files"`
 }
 
@@ -238,6 +280,10 @@ func buildInmemoryDb(asbDataFolder string) *gorm.DB {
 	}
 	// 自动迁移数据库结构
 	db.AutoMigrate(&FolderInfo{}, &FileInfo{})
+
+	// 从主数据库加载声优映射 (mediaId -> vas)
+	vasMap := loadVasMap()
+
 	//defer db.Close()
 	// 遍历asbDataFolder一级目录
 	entries, err := os.ReadDir(asbDataFolder)
@@ -258,15 +304,28 @@ func buildInmemoryDb(asbDataFolder string) *gorm.DB {
 			if err != nil {
 				log.Fatalf("Failed to scan directory: %v", err)
 			}
+			// 检测封面图
+			coverPath := detectCover(directory)
+			// 统计音频文件数量
+			audioCount := 0
+			for _, f := range directory {
+				if !f.IsDir && isAudioFile(f.Name) {
+					audioCount++
+				}
+			}
+
 			// 构建 FolderInfo
 			folder := FolderInfo{
 				MediaId:      mediaId,
 				Date:         date,
 				HasSubtitles: hasSubtitles,
 				Title:        title,
+				Vas:          vasMap[mediaId],
 				Name:         entry.Name(),
 				Files:        directory,
 				BaseDir:      baseDir,
+				CoverPath:    coverPath,
+				AudioCount:   audioCount,
 			}
 			// 保存到数据库
 			if err := db.Create(&folder).Error; err != nil {
@@ -276,6 +335,76 @@ func buildInmemoryDb(asbDataFolder string) *gorm.DB {
 	}
 
 	return db
+}
+
+// loadVasMap 从主数据库加载 source_id -> vas 的映射
+func loadVasMap() map[string]string {
+	m := make(map[string]string)
+	mainDB, err := database.InitDB()
+	if err != nil {
+		log.Printf("主数据库未就绪，跳过声优信息加载: %v", err)
+		return m
+	}
+	var works []model.MetadataWork
+	if err := mainDB.Select("source_id, vas").Find(&works).Error; err != nil {
+		log.Printf("查询声优信息失败: %v", err)
+		return m
+	}
+	for _, w := range works {
+		if w.Vas != "" {
+			m[w.SourceID] = w.Vas
+		}
+	}
+	return m
+}
+
+// detectCover 从文件列表中查找封面图（优先找封面命名的图片）
+func detectCover(files []FileInfo) string {
+	coverNames := map[string]bool{
+		"cover.jpg": true, "cover.png": true, "cover.webp": true,
+		"folder.jpg": true, "folder.png": true, "front.jpg": true,
+	}
+	for _, f := range files {
+		if f.IsDir {
+			continue
+		}
+		lower := strings.ToLower(f.Name)
+		if coverNames[lower] {
+			return f.Path
+		}
+	}
+	// 没找到封面命名，用第一张图片
+	for _, f := range files {
+		if f.IsDir {
+			continue
+		}
+		lower := strings.ToLower(f.Name)
+		if strings.HasSuffix(lower, ".jpg") || strings.HasSuffix(lower, ".jpeg") ||
+			strings.HasSuffix(lower, ".png") || strings.HasSuffix(lower, ".webp") {
+			return f.Path
+		}
+	}
+	return ""
+}
+
+// isAudioFile 判断文件名是否为音频文件
+func isAudioFile(name string) bool {
+	lower := strings.ToLower(name)
+	switch {
+	case strings.HasSuffix(lower, ".mp3"):
+		return true
+	case strings.HasSuffix(lower, ".wav"):
+		return true
+	case strings.HasSuffix(lower, ".flac"):
+		return true
+	case strings.HasSuffix(lower, ".m4a"):
+		return true
+	case strings.HasSuffix(lower, ".ogg"):
+		return true
+	case strings.HasSuffix(lower, ".aac"):
+		return true
+	}
+	return false
 }
 
 // parseFolderName 尽力从目录名中解析作品信息，兼容新旧命名格式（issue #46）。
@@ -347,6 +476,40 @@ func getFolderInfoPage(db *gorm.DB, page, pageSize int, baseDir string) ([]Folde
 		Limit(pageSize).
 		Find(&folders).Error; err != nil {
 		return nil, 0, err
+	}
+
+	return folders, total, nil
+}
+
+// searchFolderInfo 搜索文件夹（按名称、MediaId、Title 模糊匹配）
+func searchFolderInfo(db *gorm.DB, q string, page, pageSize int) ([]FolderInfo, int64, error) {
+	var folders []FolderInfo
+	var total int64
+
+	like := "%" + q + "%"
+	query := db.Model(&FolderInfo{}).
+		Where("name LIKE ? OR media_id LIKE ? OR title LIKE ?", like, like, like)
+
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	if err := query.Preload("Files").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Find(&folders).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// 补充音频计数和封面
+	for i := range folders {
+		count := 0
+		for _, f := range folders[i].Files {
+			if !f.IsDir && isAudioFile(f.Name) {
+				count++
+			}
+		}
+		folders[i].AudioCount = count
 	}
 
 	return folders, total, nil
