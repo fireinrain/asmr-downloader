@@ -35,6 +35,8 @@ config 命令用于初始化或重置本程序的配置文件，并以“交互�
   - 同步数据存放目录
   - 同步容量限制（如 200MB、2GB）
   - 优先媒体格式（如 flac、mp3）
+  - 下载扩展名白名单（如 .mp3,.png,.jpg）
+  - 下载排除扩展名黑名单（如 .mp4,.webm）
   - 下载目录命名格式（占位符 {rjid} {date} {subtitle} {title}）
   - 同步/下载的 QPS 限流配置
   - 请求抖动（Jitter）设置，用于分散负载、降低风控风险
@@ -93,7 +95,12 @@ func InitConfig(reader *bufio.Reader, configFile string) {
 	syncWantedSize := prompt(reader, "同步容量限制（1MB/GB/TB/PB，默认：200MB）: ", "200MB")
 	preferMedia := prompt(reader, "优先媒体格式 [all | mp3>wav>flac]（默认：all）: ", "all")
 
-	// ----- 新增：下载目录命名格式 -----
+	// ----- 下载扩展名白/黑名单 -----
+	includeExt := prompt(reader, "只下载的文件扩展名（白名单，逗号分隔，如 .mp3,.png,.jpg，留空不筛选）: ", "")
+	excludeExt := prompt(reader, "排除的文件扩展名（黑名单，逗号分隔，如 .mp4,.webm，留空不过滤）: ", "")
+	// ----------------------------
+
+	// ----- 下载目录命名格式 -----
 	folderNameFormat := prompt(reader,
 		fmt.Sprintf("下载目录命名格式（占位符: {rjid} {date} {subtitle} {title}，默认: %s）: ", consts.DefaultFolderNameFormat),
 		consts.DefaultFolderNameFormat)
@@ -131,8 +138,9 @@ func InitConfig(reader *bufio.Reader, configFile string) {
 	viper.Set("downloader.sync_data_folder", syncDataFolder)
 	viper.Set("downloader.sync_wanted_size", syncWantedSize)
 	viper.Set("downloader.prefer_media", preferMedia)
+	viper.Set("downloader.include_ext", includeExt)
+	viper.Set("downloader.exclude_ext", excludeExt)
 	viper.Set("downloader.idm_path", idmPath)
-	// viper key 必须与 model.Downloader 的 mapstructure tag 完全一致
 	viper.Set("downloader.folder_name_format", folderNameFormat)
 
 	viper.Set("limit.sync_qps", syncQPS)
