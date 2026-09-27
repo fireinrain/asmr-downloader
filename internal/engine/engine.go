@@ -33,6 +33,7 @@ type EngineManager struct {
 	Config       *model.Config
 	WorkerPool   pond.Pool // work 间并行下载池，限速器控制提交速率
 	DownloadPool pond.Pool // 单 work 内文件并行下载池
+	Force        bool      // 强制下载：跳过已存在文件检测，直接覆盖重下
 	Client       *resty.Client
 	JWTToken     string
 	ApiUrl       string
@@ -274,9 +275,31 @@ func (m *EngineManager) DownloadOne(ctx context.Context, id string, storeBaseDir
 			task.Info("已按 exclude_ext 排除 %d 个文件", skipped)
 		}
 	}
+	// 跳过已存在的文件（存在且非空视为已下载）；--force 时跳过检测直接覆盖重下
+	if m.Force {
+		task.Info("已启用强制下载，覆盖已存在的文件")
+	}
+	toDownload := make([][]string, 0, len(needDownloadUrls))
+	for _, url := range needDownloadUrls {
+		if !m.Force && isFileExists(filepath.Join(url[1], url[2])) {
+			continue
+		}
+		toDownload = append(toDownload, url)
+	}
+	skipped := len(needDownloadUrls) - len(toDownload)
+	if skipped > 0 {
+		task.Info("检测到 %d/%d 个文件已存在，跳过", skipped, len(needDownloadUrls))
+	}
+	if len(toDownload) == 0 {
+		if skipped > 0 {
+			task.Info("所有文件均已存在，无需重复下载")
+		}
+		return nil
+	}
+
 	//并行下载
 	group := m.DownloadPool.NewGroup()
-	for _, url := range needDownloadUrls {
+	for _, url := range toDownload {
 		//log.Println("Download file:", url[2])
 		group.SubmitErr(func() error {
 			return m.downloadFile(url[0], url[1], url[2])
@@ -286,6 +309,12 @@ func (m *EngineManager) DownloadOne(ctx context.Context, id string, storeBaseDir
 	err = group.Wait()
 
 	return err
+}
+
+// isFileExists 判断文件是否存在且非空（空文件视为未下载完成）
+func isFileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir() && info.Size() > 0
 }
 
 func (m *EngineManager) filterTargetAudioFormat(urls [][]string) [][]string {
@@ -646,6 +675,7 @@ func (m *EngineManager) downloadFile(url string, path string, fileName string) e
 			Get(url)
 		if err != nil {
 			lastErr = err
+			os.Remove(storePath) // 清理残留的半截文件，避免下次被误判为已下载
 			// 仅对可重试的网络错误进行重试
 			if isRetryableError(err) {
 				continue
@@ -655,6 +685,7 @@ func (m *EngineManager) downloadFile(url string, path string, fileName string) e
 		}
 		if !resp.IsSuccess() {
 			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode())
+			os.Remove(storePath) // 同上，避免错误响应体或半截文件残留
 			if resp.StatusCode() >= 500 || resp.StatusCode() == 429 {
 				continue // 服务端错误或限流，可重试
 			}
@@ -664,6 +695,7 @@ func (m *EngineManager) downloadFile(url string, path string, fileName string) e
 		return nil // 成功
 	}
 
+	os.Remove(storePath) // 重试耗尽，清理残留文件
 	logger.Error("下载文件 %s 最终失败 (已重试 %d 次): %s", fileName, maxRetries, logger.SummarizeError(lastErr))
 	return fmt.Errorf("下载 %s 失败 (重试 %d 次后): %w", fileName, maxRetries, lastErr)
 }

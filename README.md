@@ -60,6 +60,9 @@ go build -o asmroner
 ./asmroner download RJ01037721,RJ02000001 -d ./downloads
 ./asmroner download hot100 -n 10 -d ./downloads
 
+# 强制重新下载（覆盖已存在的文件，跳过"已存在"检测）
+./asmroner download RJ01037721 -f
+
 # 搜索 + 下载/导出
 ./asmroner search download "护士" -d ./downloads -s 20
 ./asmroner search export "护士" -n 100 -f data.json
@@ -96,7 +99,7 @@ go build -o asmroner
 <summary><b>✨ 功能特性</b></summary>
 
 - **搜索**：单个/批量 RJID、高级搜索语法（标签/社团/声优/时长/评分/价格/销量/年龄/语言等过滤）、搜索结果分页自动合并、结果导出 CSV/JSON
-- **下载**：单个/批量/热门作品下载，支持音频格式优先级（mp3>wav>flac）、扩展名白名单/黑名单过滤，自动限流、重试、指数退避、Worker Pool 并发控制
+- **下载**：单个/批量/热门作品下载，已存在文件自动跳过（`--force` 强制覆盖重下），支持音频格式优先级（mp3>wav>flac）、扩展名白名单/黑名单过滤，自动限流、重试、指数退避、Worker Pool 并发控制
 - **导出**：导出作品下载链接列表，每个作品生成 `links.txt` + `idm_download.bat` + `aria2_download.sh`，支持单作品和热门榜批量导出
 - **同步**：全量元数据同步（含同步率统计）、容量感知批量下载控制、状态跟踪（PENDING/COMPLETED/FAILED）、失败重试（清空旧目录重新下载）、CSV/JSON 导出同步状态
 - **Web 界面**：可视化浏览、浏览器内音频播放、分页 API、自动打开浏览器、优雅关闭
@@ -194,7 +197,7 @@ download_jitter_max = 5000  # 下载请求最大随机抖动（ms）
 | `search` | `-c` | 搜索结果数量（默认 10，自动分页合并） |
 | `search download` | `-d`, `-s` | 下载目录、下载数量（默认 100） |
 | `search export` | `-f`, `-n` | 导出文件名（.csv/.json），导出数量（默认 100） |
-| `download` | `-d`, `-n` | 下载目录、hot100 模式下载数量 |
+| `download` | `-d`, `-n`, `-f` | 下载目录、hot100 模式下载数量、强制覆盖已下载文件 |
 | `export` | `-o`, `-n` | 输出目录、hot100 模式导出数量 |
 | `sync` | — | 仅同步元数据（自动比对本地/远端，显示同步率） |
 | `sync download` | `-d` | 同步后按容量限制逐批下载，含状态跟踪 |
@@ -257,6 +260,8 @@ asmroner/
 **同步时提示"本地数据存在逻辑错误"** → 检查 SQLite 数据库是否存在重复数据，可删除 `.asmroner-data/asmroner.db` 后重新同步
 
 **如何自定义下载目录名** → 在 `config.toml` 中配置 `folder_name_format`，支持占位符 `{rjid}` `{date}` `{subtitle}` `{title}`，如 `{rjid}-{title}`
+
+**重复下载时不想跳过已存在的文件** → 使用 `-f` / `--force` 强制覆盖重下，如 `./asmroner download RJ01037721 -f`；不加该参数时已存在的文件会自动跳过
 
 </details>
 

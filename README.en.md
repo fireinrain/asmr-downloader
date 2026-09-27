@@ -59,6 +59,7 @@ This launches an interactive setup wizard. Here are the key items explained:
 ./asmroner download RJ01037721 -d ./downloads
 ./asmroner download RJ01037721,RJ02000001 -d ./downloads
 ./asmroner download hot100 -n 10 -d ./downloads
+./asmroner download RJ01037721 -f
 
 # Search + Download/Export
 ./asmroner search download "nurse" -d ./downloads -s 20
@@ -96,7 +97,7 @@ This launches an interactive setup wizard. Here are the key items explained:
 <summary><b>✨ Features</b></summary>
 
 - **Search**: Single/batch RJID lookup, advanced search syntax (filter by tag/circle/VA/duration/rating/price/sales/age/language), auto page-merging, CSV/JSON export
-- **Download**: Single/batch/hot ranking downloads, audio format priority (mp3>wav>flac), extension whitelist/blacklist filtering, auto rate-limiting, retry with exponential backoff, Worker Pool concurrency
+- **Download**: Single/batch/hot ranking downloads, automatically skips existing files (`--force` to overwrite), audio format priority (mp3>wav>flac), extension whitelist/blacklist filtering, auto rate-limiting, retry with exponential backoff, Worker Pool concurrency
 - **Export**: Export download link lists — generates `links.txt` + `idm_download.bat` + `aria2_download.sh` per work, supports single work and hot ranking batch export
 - **Sync**: Full metadata sync (with sync rate statistics), capacity-aware batch download control, status tracking (PENDING/COMPLETED/FAILED), retry failed downloads, CSV/JSON status export
 - **Web UI**: Visual browsing, in-browser audio playback, paginated API, auto-open browser, graceful shutdown
@@ -194,7 +195,7 @@ download_jitter_max = 5000  # Max random jitter for download requests (ms)
 | `search` | `-c` | Search result count (default 10, auto page-merge) |
 | `search download` | `-d`, `-s` | Download directory, download count (default 100) |
 | `search export` | `-f`, `-n` | Export filename (.csv/.json), export count (default 100) |
-| `download` | `-d`, `-n` | Download directory, hot100 mode count |
+| `download` | `-d`, `-n`, `-f` | Download directory, hot100 mode count, force overwrite existing files |
 | `export` | `-o`, `-n` | Output directory, hot100 mode count |
 | `sync` | — | Sync metadata only (compares local vs remote, shows sync rate) |
 | `sync download` | `-d` | Sync then batch download with size limit and status tracking |
@@ -257,6 +258,8 @@ asmroner/
 **Sync shows "local data logic error"** → The local SQLite database may have duplicate entries; delete `.asmroner-data/asmroner.db` and re-sync
 
 **How to customize download folder names** → Configure `folder_name_format` in `config.toml` with placeholders `{rjid}` `{date}` `{subtitle}` `{title}`, e.g. `{rjid}-{title}`
+
+**How to re-download without skipping existing files** → Use `-f` / `--force` to overwrite, e.g. `./asmroner download RJ01037721 -f`; without it, existing files are skipped automatically
 
 </details>
 
