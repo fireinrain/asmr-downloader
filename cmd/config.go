@@ -91,6 +91,7 @@ func InitConfig(reader *bufio.Reader, configFile string) {
 	maxWorkers := promptInt(reader, "最大并发数（默认：5）: ", 5)
 	maxRetries := promptInt(reader, "最大重试次数（默认：3）: ", 3)
 	syncDataFolder := prompt(reader, "同步数据存放目录（默认：./syncdata）: ", "./syncdata")
+	downloadDir := prompt(reader, "默认下载目录（可选，留空则 download 在当前目录，-d 指定的优先级高于这个配置项目）: ", "")
 
 	syncWantedSize := prompt(reader, "同步容量限制（1MB/GB/TB/PB，默认：200MB）: ", "200MB")
 	preferMedia := prompt(reader, "优先媒体格式 [all | mp3>wav>flac]（默认：all）: ", "all")
@@ -136,6 +137,7 @@ func InitConfig(reader *bufio.Reader, configFile string) {
 	viper.Set("downloader.max_workers", maxWorkers)
 	viper.Set("downloader.max_retries", maxRetries)
 	viper.Set("downloader.sync_data_folder", syncDataFolder)
+	viper.Set("downloader.download_dir", downloadDir)
 	viper.Set("downloader.sync_wanted_size", syncWantedSize)
 	viper.Set("downloader.prefer_media", preferMedia)
 	viper.Set("downloader.include_ext", includeExt)

@@ -26,6 +26,8 @@ type Downloader struct {
 	IdmPath    string `mapstructure:"idm_path"`
 	// 下载目录命名格式，占位符: {rjid} {date} {subtitle} {title}；空用默认值
 	FolderNameFormat string `mapstructure:"folder_name_format"`
+	// 默认下载目录；空则 download 使用当前目录（-d 显式指定时优先）
+	DownloadDir string `mapstructure:"download_dir"`
 }
 
 type Limit struct {
