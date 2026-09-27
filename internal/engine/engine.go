@@ -10,6 +10,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -214,7 +215,9 @@ func (m *EngineManager) SimpleDownload(ctx context.Context, ids []string, storeB
 			return nil
 		})
 	}
-	return group.Wait()
+	err := group.Wait()
+	utils.Wait() // 等待进度条渲染完毕后返回
+	return err
 }
 
 func (m *EngineManager) DownloadOne(ctx context.Context, id string, storeBaseDir string) error {
@@ -298,11 +301,13 @@ func (m *EngineManager) DownloadOne(ctx context.Context, id string, storeBaseDir
 	}
 
 	//并行下载
+	workBar := utils.AddCountBar(strings.ToUpper(prefix)+number, int64(len(toDownload)))
+	defer workBar.Abort() // 失败路径下及时移除未完成的计数条，避免阻塞 Wait
 	group := m.DownloadPool.NewGroup()
 	for _, url := range toDownload {
 		//log.Println("Download file:", url[2])
 		group.SubmitErr(func() error {
-			return m.downloadFile(url[0], url[1], url[2])
+			return m.downloadFile(url[0], url[1], url[2], workBar)
 			//return nil
 		})
 	}
@@ -651,7 +656,7 @@ func (m *EngineManager) buildMetaDataWorkUrls(totalCount int, pageSize int) []st
 	return urls
 }
 
-func (m *EngineManager) downloadFile(url string, path string, fileName string) error {
+func (m *EngineManager) downloadFile(url string, path string, fileName string, workBar *utils.Bar) error {
 	storePath := filepath.Join(path, fileName)
 	maxRetries := m.Config.Downloader.MaxRetries
 	if maxRetries <= 0 {
@@ -669,35 +674,79 @@ func (m *EngineManager) downloadFile(url string, path string, fileName string) e
 			os.Remove(storePath)
 		}
 
-		logger.Debug("下载文件: %s", fileName)
-		resp, err := m.Client.R().
-			SetOutput(storePath).
-			Get(url)
-		if err != nil {
-			lastErr = err
-			os.Remove(storePath) // 清理残留的半截文件，避免下次被误判为已下载
-			// 仅对可重试的网络错误进行重试
-			if isRetryableError(err) {
-				continue
-			}
-			logger.Error("下载文件 %s 失败 (不可重试): %s", fileName, logger.SummarizeError(err))
-			return err
+		_, err := m.doDownload(url, storePath, fileName)
+		if err == nil {
+			workBar.Increment() // 单文件成功，作品计数条 +1
+			return nil
 		}
-		if !resp.IsSuccess() {
-			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode())
-			os.Remove(storePath) // 同上，避免错误响应体或半截文件残留
-			if resp.StatusCode() >= 500 || resp.StatusCode() == 429 {
+		lastErr = err
+		os.Remove(storePath) // 清理残留的半截文件，避免下次被误判为已下载
+
+		// 区分可重试与不可重试错误
+		var statusErr *StatusError
+		if errors.As(err, &statusErr) {
+			if statusErr.Code >= 500 || statusErr.Code == 429 {
 				continue // 服务端错误或限流，可重试
 			}
-			logger.Error("下载文件 %s 失败, HTTP 状态码: %d", fileName, resp.StatusCode())
-			return lastErr
+			logger.Error("下载文件 %s 失败, HTTP 状态码: %d", fileName, statusErr.Code)
+			return err
 		}
-		return nil // 成功
+		if isRetryableError(err) {
+			continue
+		}
+		logger.Error("下载文件 %s 失败 (不可重试): %s", fileName, logger.SummarizeError(err))
+		return err
 	}
 
 	os.Remove(storePath) // 重试耗尽，清理残留文件
 	logger.Error("下载文件 %s 最终失败 (已重试 %d 次): %s", fileName, maxRetries, logger.SummarizeError(lastErr))
 	return fmt.Errorf("下载 %s 失败 (重试 %d 次后): %w", fileName, maxRetries, lastErr)
+}
+
+// StatusError 非 2xx 状态码错误类型，用于区分可重试（5xx/429）与不可重试（其它 4xx）状态
+type StatusError struct{ Code int }
+
+func (e *StatusError) Error() string { return fmt.Sprintf("HTTP %d", e.Code) }
+
+// doDownload 发起单次下载请求：流式写入磁盘并渲染进度条。
+// 返回写入的字节数与错误；状态码错误以 *StatusError 返回，由调用方决定是否重试。
+func (m *EngineManager) doDownload(url string, storePath string, fileName string) (int64, error) {
+	resp, err := m.Client.R().
+		SetDoNotParseResponse(true).
+		Get(url)
+	if err != nil {
+		return 0, err
+	}
+	raw := resp.RawResponse
+	defer raw.Body.Close()
+
+	if !resp.IsSuccess() {
+		return 0, &StatusError{Code: raw.StatusCode}
+	}
+
+	out, err := os.Create(storePath)
+	if err != nil {
+		return 0, err
+	}
+
+	bar := utils.AddFileBar(fileName, raw.ContentLength)
+	src := bar.ProxyReader(raw.Body)
+	n, copyErr := io.Copy(out, src)
+	closeErr := out.Close()
+	if copyErr == nil {
+		copyErr = closeErr
+	}
+	if bar != nil {
+		if copyErr == nil {
+			bar.Complete(n) // 未知 Content-Length 时需手动触发完成
+		} else {
+			bar.Abort()
+		}
+	}
+	if copyErr != nil {
+		return n, copyErr
+	}
+	return n, nil
 }
 
 // isRetryableError 判断错误是否可以重试
@@ -802,7 +851,9 @@ func (m *EngineManager) DownloadBatchMedias(ctx context.Context, works []model.S
 			return nil
 		})
 	}
-	return group.Wait()
+	err := group.Wait()
+	utils.Wait() // 等待进度条渲染完毕再返回
+	return err
 }
 
 func (m *EngineManager) DownloadMediaByBatchIds(ctx context.Context, worksId []string, storePathDir string) error {
@@ -820,7 +871,9 @@ func (m *EngineManager) DownloadMediaByBatchIds(ctx context.Context, worksId []s
 			return nil
 		})
 	}
-	return group.Wait()
+	err := group.Wait()
+	utils.Wait() // 等待进度条渲染完毕再返回
+	return err
 }
 
 // 打印同步元数据统计信息
