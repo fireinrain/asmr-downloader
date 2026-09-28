@@ -103,10 +103,12 @@ func TestEngineManager_FilterExcludeExt(t *testing.T) {
 }
 
 // runFilterPipeline 按 DownloadOne 的真实顺序串联全部过滤器
-func runFilterPipeline(m *EngineManager, urls [][]string) [][]string {
+func runFilterPipeline(m *EngineManager, urls [][]string, baseDir string) [][]string {
 	urls = m.filterTargetAudioFormat(urls)
 	urls = m.filterIncludeExt(urls)
 	urls = m.filterExcludeExt(urls)
+	urls = m.filterIncludeKeyword(urls, baseDir)
+	urls = m.filterExcludeKeyword(urls, baseDir)
 	return urls
 }
 
@@ -161,7 +163,7 @@ func TestEngineManager_FilterPipelineMatrix(t *testing.T) {
 			want: []string{"01.mp3.vtt", "01.wav.vtt"},
 		},
 		{
-			name: "黑名单穷举四项 .mp3,.wav,.mp3.vtt,.wav.vtt：音频字幕全排除，其余保留",
+			name:    "黑名单穷举四项 .mp3,.wav,.mp3.vtt,.wav.vtt：音频字幕全排除，其余保留",
 			exclude: ".mp3,.wav,.mp3.vtt,.wav.vtt", fixture: urls,
 			want: []string{"cover.jpg", "movie.mp4", "おまけ.pdf"},
 		},
@@ -178,7 +180,7 @@ func TestEngineManager_FilterPipelineMatrix(t *testing.T) {
 			want: []string{"01.mp3", "01.wav", "01.wav.vtt", "cover.jpg", "movie.mp4", "おまけ.pdf"},
 		},
 		{
-			name: "白名单 .mp3,.vtt 与黑名单 .mp3.vtt 串联：mp3 本体与 wav 字幕保留",
+			name:    "白名单 .mp3,.vtt 与黑名单 .mp3.vtt 串联：mp3 本体与 wav 字幕保留",
 			include: ".mp3,.vtt", exclude: ".mp3.vtt", fixture: urls,
 			want: []string{"01.mp3", "01.wav.vtt"},
 		},
@@ -195,22 +197,22 @@ func TestEngineManager_FilterPipelineMatrix(t *testing.T) {
 			want: []string{"01.mp3", "cover.jpg"},
 		},
 		{
-			name: "白名单与黑名单重叠 .mp3,.jpg 排除 .mp3：先白后黑均生效",
+			name:    "白名单与黑名单重叠 .mp3,.jpg 排除 .mp3：先白后黑均生效",
 			include: ".mp3,.jpg", exclude: ".mp3", fixture: urls,
 			want: []string{"cover.jpg"},
 		},
 		{
-			name: "prefer_media=mp3 与白名单 .vtt 叠加：仅剩 mp3 的字幕",
+			name:        "prefer_media=mp3 与白名单 .vtt 叠加：仅剩 mp3 的字幕",
 			preferMedia: "mp3", include: ".vtt", fixture: urls,
 			want: []string{"01.mp3.vtt"},
 		},
 		{
-			name: "prefer_media=mp3：选中 mp3 一套，非音频文件不受影响",
+			name:        "prefer_media=mp3：选中 mp3 一套，非音频文件不受影响",
 			preferMedia: "mp3", fixture: urls,
 			want: []string{"01.mp3", "01.mp3.vtt", "cover.jpg", "movie.mp4", "おまけ.pdf"},
 		},
 		{
-			name: "prefer_media=mp3 但作品只有 wav：音频全部被丢弃，仅剩非音频",
+			name:        "prefer_media=mp3 但作品只有 wav：音频全部被丢弃，仅剩非音频",
 			preferMedia: "mp3", fixture: wavOnly,
 			want: []string{"cover.jpg"},
 		},
@@ -223,16 +225,100 @@ func TestEngineManager_FilterPipelineMatrix(t *testing.T) {
 			m.Config.Downloader.IncludeExt = tc.include
 			m.Config.Downloader.ExcludeExt = tc.exclude
 
-			got := runFilterPipeline(m, tc.fixture)
+			got := runFilterPipeline(m, tc.fixture, "work")
 			if len(got) != len(tc.want) {
 				t.Fatalf("kept %d files, want %d: %v", len(got), len(tc.want), names(got))
 			}
+			// 关键词过滤是流式保留，顺序与输入一致
 			for i, f := range got {
 				if f[2] != tc.want[i] {
 					t.Errorf("kept[%d] = %q, want %q (all: %v)", i, f[2], tc.want[i], names(got))
 				}
 			}
 		})
+	}
+}
+
+func TestEngineManager_FilterKeyword(t *testing.T) {
+	// 模拟 SEあり / SEなし 双版本目录结构
+	urls := [][]string{
+		{"u1", filepath.Join("work", "SEあり"), "01.mp3"},
+		{"u2", filepath.Join("work", "SEあり", "folder"), "02.wav"},
+		{"u3", filepath.Join("work", "SEなし"), "01.mp3"},
+		{"u4", "work", "03_SEなし.mp3"},
+		{"u5", "work", "04.mp3"},
+	}
+	base := "work"
+
+	t.Run("黑名单排除 SEなし 目录和文件名", func(t *testing.T) {
+		m := &EngineManager{Config: &model.Config{}}
+		m.Config.Downloader.ExcludeKeyword = "SEなし, no se"
+		got := m.filterExcludeKeyword(urls, base)
+		want := []string{"01.mp3", "02.wav", "04.mp3"}
+		if len(got) != len(want) {
+			t.Fatalf("kept %d files, want %d: %v", len(got), len(want), names(got))
+		}
+		for i, f := range got {
+			if f[2] != want[i] {
+				t.Errorf("kept[%d] = %q, want %q", i, f[2], want[i])
+			}
+		}
+	})
+
+	t.Run("白名单只留 SEあり 目录", func(t *testing.T) {
+		m := &EngineManager{Config: &model.Config{}}
+		m.Config.Downloader.IncludeKeyword = "SEあり"
+		got := m.filterIncludeKeyword(urls, base)
+		want := []string{"01.mp3", "02.wav"}
+		if len(got) != len(want) {
+			t.Fatalf("include_keyword kept %d files, want %d: %v", len(got), len(want), names(got))
+		}
+		for i, f := range got {
+			if f[2] != want[i] {
+				t.Errorf("kept[%d] = %q, want %q", i, f[2], want[i])
+			}
+		}
+	})
+}
+
+// TestEngineManager_PreviewFilterStats 保证 list 命令的过滤预览与真实下载过滤链路一致
+func TestEngineManager_PreviewFilterStats(t *testing.T) {
+	m := &EngineManager{Config: &model.Config{}}
+	m.Config.Downloader.PreferMedia = "mp3"
+	m.Config.Downloader.IncludeExt = ".mp3,.mp3.vtt"
+	m.Config.Downloader.ExcludeKeyword = "SEなし"
+
+	relPaths := []string{
+		"SEあり/01.mp3", "SEあり/01.mp3.vtt",
+		"SEあり/01.wav", "SEあり/01.wav.vtt",
+		"SEなし/01.mp3", "SEなし/01.mp3.vtt",
+		"cover.jpg",
+	}
+	kept, stats := m.PreviewFilterStats(relPaths)
+
+	want := []string{"SEあり/01.mp3", "SEあり/01.mp3.vtt"}
+	if len(kept) != len(want) {
+		t.Fatalf("preview kept %v, want %v", kept, want)
+	}
+	for i, p := range kept {
+		if p != want[i] {
+			t.Errorf("kept[%d] = %q, want %q", i, p, want[i])
+		}
+	}
+
+	// prefer_media 丢弃 wav 双件套、include_ext 丢弃 cover.jpg、exclude_keyword 丢弃 SEなし 双件套
+	wantStats := []FilterStat{
+		{Rule: "prefer_media", Detail: "mp3", Excluded: 2},
+		{Rule: "include_ext", Detail: ".mp3,.mp3.vtt", Excluded: 1},
+		{Rule: "exclude_keyword", Detail: "seなし", Excluded: 2},
+	}
+	if len(stats) != len(wantStats) {
+		t.Fatalf("stats = %+v, want %+v", stats, wantStats)
+	}
+	for i, s := range stats {
+		if s != wantStats[i] {
+			t.Errorf("stats[%d] = %+v, want %+v", i, s, wantStats[i])
+		}
 	}
 }
 

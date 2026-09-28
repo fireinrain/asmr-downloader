@@ -11,7 +11,6 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/mattn/go-runewidth"
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 )
@@ -128,8 +127,6 @@ func genTableView(results []model.SearchResultView) {
 	for i, r := range results {
 		results[i].Title = utils.NextlineRune(r.Title, 30)
 	}
-
-	runewidth.DefaultCondition.EastAsianWidth = true
 
 	table := tablewriter.NewWriter(os.Stdout)
 	headers := []string{"ID", "日期", "评分", "销量", "字幕", "标题"}

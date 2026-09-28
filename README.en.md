@@ -61,6 +61,12 @@ This launches an interactive setup wizard. Here are the key items explained:
 ./asmroner download hot100 -n 10 -d ./downloads
 ./asmroner download RJ01037721 -f
 
+# List file types (with counts) inside a work's resource directory
+./asmroner list RJ01412863
+
+# List all files in a work's resource directory
+./asmroner list RJ01412863 -d
+
 # Search + Download/Export
 ./asmroner search download "nurse" -d ./downloads -s 20
 ./asmroner search export "nurse" -n 100 -f data.json
@@ -195,6 +201,7 @@ download_jitter_max = 5000  # Max random jitter for download requests (ms)
 | `search` | `-c` | Search result count (default 10, auto page-merge) |
 | `search download` | `-d`, `-s` | Download directory, download count (default 100) |
 | `search export` | `-f`, `-n` | Export filename (.csv/.json), export count (default 100) |
+| `list` | `-d` | Show file types (with counts) inside a work's resource directory; `-d/--detail` lists all files |
 | `download` | `-d`, `-n`, `-f` | Download directory, hot100 mode count, force overwrite existing files |
 | `export` | `-o`, `-n` | Output directory, hot100 mode count |
 | `sync` | — | Sync metadata only (compares local vs remote, shows sync rate) |

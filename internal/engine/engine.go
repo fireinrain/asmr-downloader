@@ -278,6 +278,20 @@ func (m *EngineManager) DownloadOne(ctx context.Context, id string, storeBaseDir
 			task.Info("已按 exclude_ext 排除 %d 个文件", skipped)
 		}
 	}
+	// 按路径关键词白名单保留（downloader.include_keyword），匹配相对目录+文件名
+	if before := len(needDownloadUrls); before > 0 {
+		needDownloadUrls = m.filterIncludeKeyword(needDownloadUrls, storeFileDir)
+		if kept := len(needDownloadUrls); kept < before {
+			task.Info("已按 include_keyword 保留 %d/%d 个文件", kept, before)
+		}
+	}
+	// 按路径关键词黑名单排除（downloader.exclude_keyword）
+	if before := len(needDownloadUrls); before > 0 {
+		needDownloadUrls = m.filterExcludeKeyword(needDownloadUrls, storeFileDir)
+		if skipped := before - len(needDownloadUrls); skipped > 0 {
+			task.Info("已按 exclude_keyword 排除 %d 个文件", skipped)
+		}
+	}
 	// 跳过已存在的文件（存在且非空视为已下载）；--force 时跳过检测直接覆盖重下
 	if m.Force {
 		task.Info("已启用强制下载，覆盖已存在的文件")
@@ -331,64 +345,49 @@ func (m *EngineManager) filterTargetAudioFormat(urls [][]string) [][]string {
 	// 2. 解析优先规则（例如 "mp3>wav>flac"）
 	rules := strings.Split(strings.ToLower(config), ">")
 
-	// 定义格式与后缀映射
-	extMap := map[string][]string{
-		"mp3":  {".mp3", ".mp3.vtt"},
-		"wav":  {".wav", ".wav.vtt"},
-		"flac": {".flac", ".flac.vtt"},
-	}
-	// 分成 groupA（支持的音频格式） 和 groupB（其它文件）
+	// 分成 groupA（音频文件）和 groupB（其它文件）
 	groupA := make([][]string, 0)
 	groupB := make([][]string, 0)
 
-	allExtList := []string{
-		".mp3", ".mp3.vtt",
-		".wav", ".wav.vtt",
-		".flac", ".flac.vtt",
-	}
-
 	for _, f := range urls {
-		lf := strings.ToLower(f[2])
-
-		found := false
-		for _, ext := range allExtList {
-			if strings.HasSuffix(lf, ext) {
-				groupA = append(groupA, f)
-				found = true
-				break
-			}
-		}
-		if !found {
+		if isAudioExt(strings.ToLower(f[2])) {
+			groupA = append(groupA, f)
+		} else {
 			groupB = append(groupB, f)
 		}
 	}
 
-	// 3. 按优先顺序过滤 groupA
+	// 3. 按优先顺序找出第一个有命中的格式
+	chosen := ""
 	for _, rule := range rules {
-		targetExts, ok := extMap[rule]
-		if !ok {
-			continue // 未知格式直接跳过
+		rule = strings.TrimSpace(rule)
+		if rule == "" {
+			continue
 		}
-
-		// 抽取符合该格式的文件
-		selected := make([][]string, 0)
 		for _, f := range groupA {
-			lf := strings.ToLower(f[2])
-			for _, ext := range targetExts {
-				if strings.HasSuffix(lf, ext) {
-					selected = append(selected, f)
-					break
-				}
+			if hitAudioFormat(strings.ToLower(f[2]), rule) {
+				chosen = rule
+				break
 			}
 		}
-		// 如果选到文件，则直接返回：选中文件 + groupB
-		if len(selected) > 0 {
-			return append(selected, groupB...)
+		if chosen != "" {
+			break
 		}
 	}
-	// 如果一个也没选到，则返回 groupB
-	return groupB
 
+	// 没有任何格式命中：音频文件全被丢弃，仅保留非音频文件（下载时同样如此）
+	if chosen == "" {
+		return groupB
+	}
+
+	// 保留选中格式的音频文件 + 全部非音频文件
+	selected := make([][]string, 0)
+	for _, f := range groupA {
+		if hitAudioFormat(strings.ToLower(f[2]), chosen) {
+			selected = append(selected, f)
+		}
+	}
+	return append(selected, groupB...)
 }
 
 // parseExtList 解析逗号分隔的扩展名配置为集合（小写、自动补点），如 ".mp4,.webm"

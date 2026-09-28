@@ -63,6 +63,12 @@ go build -o asmroner
 # 强制重新下载（覆盖已存在的文件，跳过"已存在"检测）
 ./asmroner download RJ01037721 -f
 
+# 查看作品资源目录内的文件类型及数量（下载前确认格式，避免 prefer_media 不匹配导致下载不到东西）
+./asmroner list RJ01412863
+
+# 列出作品资源目录下的所有文件
+./asmroner list RJ01412863 -d
+
 # 搜索 + 下载/导出
 ./asmroner search download "护士" -d ./downloads -s 20
 ./asmroner search export "护士" -n 100 -f data.json
@@ -197,6 +203,7 @@ download_jitter_max = 5000  # 下载请求最大随机抖动（ms）
 | `search` | `-c` | 搜索结果数量（默认 10，自动分页合并） |
 | `search download` | `-d`, `-s` | 下载目录、下载数量（默认 100） |
 | `search export` | `-f`, `-n` | 导出文件名（.csv/.json），导出数量（默认 100） |
+| `list` | `-d` | 查看作品资源目录内的文件类型及数量；`-d/--detail` 列出所有文件 |
 | `download` | `-d`, `-n`, `-f` | 下载目录、hot100 模式下载数量、强制覆盖已下载文件 |
 | `export` | `-o`, `-n` | 输出目录、hot100 模式导出数量 |
 | `sync` | — | 仅同步元数据（自动比对本地/远端，显示同步率） |

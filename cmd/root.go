@@ -7,6 +7,7 @@ import (
 	"asmroner/internal/model"
 	"os"
 
+	"github.com/olekukonko/tablewriter/pkg/twwidth"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -36,6 +37,12 @@ asmroner 是一个基于Go的多功能命令行工，提供以下功能：
 
   asmroner search RJ01037721
       按 RJID 或关键字搜索资源
+
+  asmroner list RJ01412863
+      查看作品资源目录内的文件类型及数量
+
+  asmroner list RJ01412863 -d
+      列出作品资源目录下的所有文件
 
   asmroner download RJ01037721
       下载单个资源到默认目录
@@ -104,6 +111,11 @@ asmroner 是一个基于Go的多功能命令行工，提供以下功能：
 // Execute 将所有子命令添加到 root 命令并设置标志。
 // 这是 main.main() 调用的唯一入口。
 func Execute() {
+	// 关闭 tablewriter 的东亚模糊宽度判定：中文 Windows 下 go-runewidth 会把
+	// 框线字符（┌─┬ 等）按 2 列计算，而终端实际按 1 列渲染，导致表格边框
+	// 只画一半长、单元格内容超出边框。按 1 列计算才能与终端实际渲染对齐。
+	twwidth.SetEastAsian(false)
+
 	if err := rootCmd.Execute(); err != nil {
 		logger.Error("%v", err)
 		os.Exit(1)

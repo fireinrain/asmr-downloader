@@ -23,6 +23,10 @@ type Downloader struct {
 	IncludeExt string `mapstructure:"include_ext"`
 	// 扩展名黑名单，如 ".mp4,.webm"；空不过滤，与白名单同时配置时先白后黑
 	ExcludeExt string `mapstructure:"exclude_ext"`
+	// 路径关键词白名单，如 "SEあり"；对相对目录+文件名做包含匹配（逗号分隔，大小写不敏感）；空不筛选
+	IncludeKeyword string `mapstructure:"include_keyword"`
+	// 路径关键词黑名单，如 "SEなし,no se"；匹配相对目录+文件名的文件被排除；空不过滤，先白后黑
+	ExcludeKeyword string `mapstructure:"exclude_keyword"`
 	IdmPath    string `mapstructure:"idm_path"`
 	// 下载目录命名格式，占位符: {rjid} {date} {subtitle} {title}；空用默认值
 	FolderNameFormat string `mapstructure:"folder_name_format"`

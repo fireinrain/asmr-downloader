@@ -37,6 +37,7 @@ config 命令用于初始化或重置本程序的配置文件，并以“交互�
   - 优先媒体格式（如 flac、mp3）
   - 下载扩展名白名单（如 .mp3,.png,.jpg）
   - 下载排除扩展名黑名单（如 .mp4,.webm）
+  - 路径关键词白/黑名单（如 SEあり / SEなし，按目录+文件名过滤）
   - 下载目录命名格式（占位符 {rjid} {date} {subtitle} {title}）
   - 同步/下载的 QPS 限流配置
   - 请求抖动（Jitter）设置，用于分散负载、降低风控风险
@@ -101,6 +102,11 @@ func InitConfig(reader *bufio.Reader, configFile string) {
 	excludeExt := prompt(reader, "排除的文件扩展名（黑名单，逗号分隔，如 .mp4,.webm，留空不过滤）: ", "")
 	// ----------------------------
 
+	// ----- 路径关键词白/黑名单 -----
+	includeKeyword := prompt(reader, "只下载路径包含关键词的文件（白名单，逗号分隔，如 SEあり，匹配目录+文件名，留空不筛选）: ", "")
+	excludeKeyword := prompt(reader, "排除路径包含关键词的文件（黑名单，逗号分隔，如 SEなし,no se，匹配目录+文件名，留空不过滤）: ", "")
+	// ----------------------------
+
 	// ----- 下载目录命名格式 -----
 	folderNameFormat := prompt(reader,
 		fmt.Sprintf("下载目录命名格式（占位符: {rjid} {date} {subtitle} {title}，默认: %s）: ", consts.DefaultFolderNameFormat),
@@ -142,6 +148,8 @@ func InitConfig(reader *bufio.Reader, configFile string) {
 	viper.Set("downloader.prefer_media", preferMedia)
 	viper.Set("downloader.include_ext", includeExt)
 	viper.Set("downloader.exclude_ext", excludeExt)
+	viper.Set("downloader.include_keyword", includeKeyword)
+	viper.Set("downloader.exclude_keyword", excludeKeyword)
 	viper.Set("downloader.idm_path", idmPath)
 	viper.Set("downloader.folder_name_format", folderNameFormat)
 

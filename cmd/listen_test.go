@@ -67,3 +67,25 @@ func TestParseFolderName(t *testing.T) {
 		t.Errorf("non-ID dir should be skipped")
 	}
 }
+
+// TestFullExt 表驱动测试：验证多级后缀提取（含泛字幕 .vtt 的嵌套展示）
+func TestFullExt(t *testing.T) {
+	cases := []struct {
+		name string
+		want string
+	}{
+		{"01.mp3.vtt", ".mp3.vtt"}, // 嵌套字幕后缀完整展示
+		{"01.wav.vtt", ".wav.vtt"}, // wav 的字幕同理
+		{"01.mp3", ".mp3"},         // 普通后缀
+		{"cover.jpg", ".jpg"},      // 图片
+		{"Track 1.5.mp3", ".mp3"},  // 文件名含点号时只取最后一段
+		{"01.vtt", ".vtt"},         // 纯字幕无前置后缀
+		{"おまけ", "(无后缀)"},           // 无点号
+		{"01.MP3.VTT", ".mp3.vtt"}, // 大小写不敏感
+	}
+	for _, c := range cases {
+		if got := fullExt(c.name); got != c.want {
+			t.Errorf("fullExt(%q) = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
