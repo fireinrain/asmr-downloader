@@ -132,14 +132,14 @@ func doListTask(id string, detail bool) {
 	for _, f := range files {
 		relPaths = append(relPaths, f.relPath())
 	}
-	keptPaths, stats := engineManager.PreviewFilterStats(relPaths)
+	keptPaths, stats, reasons := engineManager.PreviewFilterStats(relPaths)
 	keptSet := make(map[string]bool, len(keptPaths))
 	for _, p := range keptPaths {
 		keptSet[p] = true
 	}
 
 	if detail {
-		printListDetail(workID, files, keptSet)
+		printListDetail(workID, files, keptSet, reasons)
 	} else {
 		printListTypes(files)
 		printListPreview(len(files), keptPaths, stats)
@@ -243,19 +243,19 @@ func buildFileTree(files []listFileEntry) *treeNode {
 	return root
 }
 
-// printListDetail 以树状结构输出所有文件明细，并标注每个文件是否会被当前配置过滤
-func printListDetail(workID string, files []listFileEntry, keptSet map[string]bool) {
+// printListDetail 以树状结构输出所有文件明细，并标注每个文件会被保留还是被哪条规则过滤
+func printListDetail(workID string, files []listFileEntry, keptSet map[string]bool, reasons map[string]string) {
 	root := buildFileTree(files)
 
-	logger.Info("文件明细 (✓ 保留 / ✗ 被过滤):")
+	logger.Info("文件明细 (✓ 保留 / ✗ 被 <规则名> 过滤):")
 	var b strings.Builder
 	b.WriteString(workID + "/\n")
-	renderTree(&b, root, "", keptSet)
+	renderTree(&b, root, "", keptSet, reasons)
 	fmt.Print(b.String())
 }
 
 // renderTree 递归渲染目录树：目录按字母序在前，文件按名称序在后
-func renderTree(b *strings.Builder, node *treeNode, prefix string, keptSet map[string]bool) {
+func renderTree(b *strings.Builder, node *treeNode, prefix string, keptSet map[string]bool, reasons map[string]string) {
 	dirNames := make([]string, 0, len(node.dirs))
 	for name := range node.dirs {
 		dirNames = append(dirNames, name)
@@ -271,14 +271,19 @@ func renderTree(b *strings.Builder, node *treeNode, prefix string, keptSet map[s
 	for _, name := range dirNames {
 		connector, childPrefix := treeBranch(prefix, idx == total-1)
 		b.WriteString(connector + name + "/\n")
-		renderTree(b, node.dirs[name], childPrefix, keptSet)
+		renderTree(b, node.dirs[name], childPrefix, keptSet, reasons)
 		idx++
 	}
 	for _, f := range files {
 		connector, _ := treeBranch(prefix, idx == total-1)
 		status := "✓ 保留"
 		if !keptSet[f.relPath()] {
-			status = "✗ 被过滤"
+			// 标注命中规则：白名单（include_*）表示未命中被挡，黑名单（exclude_*）表示命中被排除
+			if rule := reasons[f.relPath()]; rule != "" {
+				status = "✗ 被 " + rule + " 过滤"
+			} else {
+				status = "✗ 被过滤"
+			}
 		}
 		b.WriteString(connector + f.name + "  " + status + "\n")
 		idx++

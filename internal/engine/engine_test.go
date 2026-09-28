@@ -294,7 +294,7 @@ func TestEngineManager_PreviewFilterStats(t *testing.T) {
 		"SEなし/01.mp3", "SEなし/01.mp3.vtt",
 		"cover.jpg",
 	}
-	kept, stats := m.PreviewFilterStats(relPaths)
+	kept, stats, reasons := m.PreviewFilterStats(relPaths)
 
 	want := []string{"SEあり/01.mp3", "SEあり/01.mp3.vtt"}
 	if len(kept) != len(want) {
@@ -318,6 +318,23 @@ func TestEngineManager_PreviewFilterStats(t *testing.T) {
 	for i, s := range stats {
 		if s != wantStats[i] {
 			t.Errorf("stats[%d] = %+v, want %+v", i, s, wantStats[i])
+		}
+	}
+
+	// 被排除的文件应标注命中的首条规则，保留的文件不应出现在 reasons 中
+	wantReasons := map[string]string{
+		"SEあり/01.wav":     "prefer_media",
+		"SEあり/01.wav.vtt": "prefer_media",
+		"cover.jpg":        "include_ext",
+		"SEなし/01.mp3":      "exclude_keyword",
+		"SEなし/01.mp3.vtt":  "exclude_keyword",
+	}
+	if len(reasons) != len(wantReasons) {
+		t.Fatalf("reasons = %v, want %v", reasons, wantReasons)
+	}
+	for p, rule := range wantReasons {
+		if reasons[p] != rule {
+			t.Errorf("reasons[%q] = %q, want %q", p, reasons[p], rule)
 		}
 	}
 }

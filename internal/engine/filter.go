@@ -119,10 +119,12 @@ type FilterStat struct {
 
 // PreviewFilterStats 按 DownloadOne 的真实过滤顺序（prefer_media → include_ext →
 // exclude_ext → include_keyword → exclude_keyword）对相对路径列表做模拟过滤，
-// 返回保留的路径和每条规则的排除统计。relPaths 为以 / 分隔的相对路径。
-func (m *EngineManager) PreviewFilterStats(relPaths []string) ([]string, []FilterStat) {
+// 返回保留的路径、每条规则的排除统计，以及被排除路径到命中规则名的映射
+// （供 list -d 逐文件标注被哪条规则过滤）。relPaths 为以 / 分隔的相对路径。
+func (m *EngineManager) PreviewFilterStats(relPaths []string) ([]string, []FilterStat, map[string]string) {
 	paths := relPaths
 	stats := make([]FilterStat, 0)
+	reasons := make(map[string]string)
 
 	// 1. prefer_media：按优先级选第一个有命中的音频格式，其余音频文件被丢弃
 	prefer := strings.ToLower(strings.TrimSpace(m.Config.Downloader.PreferMedia))
@@ -149,6 +151,8 @@ func (m *EngineManager) PreviewFilterStats(relPaths []string) ([]string, []Filte
 			if isAudioExt(lf) {
 				if chosen != "" && hitAudioFormat(lf, chosen) {
 					kept = append(kept, p)
+				} else {
+					reasons[p] = "prefer_media"
 				}
 			} else {
 				kept = append(kept, p)
@@ -161,64 +165,71 @@ func (m *EngineManager) PreviewFilterStats(relPaths []string) ([]string, []Filte
 	}
 
 	// 2. include_ext
-	paths, stat := filterPathsByExtSet(paths, "include_ext", parseExtList(m.Config.Downloader.IncludeExt), true)
-	if stat != nil {
-		stats = append(stats, *stat)
+	set := parseExtList(m.Config.Downloader.IncludeExt)
+	before := len(paths)
+	paths = filterPathsByExtSet(paths, "include_ext", set, true, reasons)
+	if excluded := before - len(paths); excluded > 0 {
+		stats = append(stats, FilterStat{Rule: "include_ext", Detail: joinExtSet(set), Excluded: excluded})
 	}
 	// 3. exclude_ext
-	paths, stat = filterPathsByExtSet(paths, "exclude_ext", parseExtList(m.Config.Downloader.ExcludeExt), false)
-	if stat != nil {
-		stats = append(stats, *stat)
+	set = parseExtList(m.Config.Downloader.ExcludeExt)
+	before = len(paths)
+	paths = filterPathsByExtSet(paths, "exclude_ext", set, false, reasons)
+	if excluded := before - len(paths); excluded > 0 {
+		stats = append(stats, FilterStat{Rule: "exclude_ext", Detail: joinExtSet(set), Excluded: excluded})
 	}
 	// 4. include_keyword
-	paths, stat = filterPathsByKeywordSet(paths, "include_keyword", parseKeywordList(m.Config.Downloader.IncludeKeyword), true)
-	if stat != nil {
-		stats = append(stats, *stat)
+	keywords := parseKeywordList(m.Config.Downloader.IncludeKeyword)
+	before = len(paths)
+	paths = filterPathsByKeywordSet(paths, "include_keyword", keywords, true, reasons)
+	if excluded := before - len(paths); excluded > 0 {
+		stats = append(stats, FilterStat{Rule: "include_keyword", Detail: strings.Join(keywords, ","), Excluded: excluded})
 	}
 	// 5. exclude_keyword
-	paths, stat = filterPathsByKeywordSet(paths, "exclude_keyword", parseKeywordList(m.Config.Downloader.ExcludeKeyword), false)
-	if stat != nil {
-		stats = append(stats, *stat)
+	keywords = parseKeywordList(m.Config.Downloader.ExcludeKeyword)
+	before = len(paths)
+	paths = filterPathsByKeywordSet(paths, "exclude_keyword", keywords, false, reasons)
+	if excluded := before - len(paths); excluded > 0 {
+		stats = append(stats, FilterStat{Rule: "exclude_keyword", Detail: strings.Join(keywords, ","), Excluded: excluded})
 	}
 
-	return paths, stats
+	return paths, stats, reasons
 }
 
-// filterPathsByExtSet 按扩展名集合对相对路径列表过滤（keep=true 保留命中，keep=false 排除命中）；
-// 命中判断基于文件名（与下载逻辑一致，避免目录名误命中扩展名）
-func filterPathsByExtSet(paths []string, rule string, set map[string]bool, keep bool) ([]string, *FilterStat) {
+// filterPathsByExtSet 按扩展名集合对相对路径列表过滤（keep=true 保留命中，keep=false 排除命中），
+// 被排除的路径在 reasons 中记为 rule；命中判断基于文件名（与下载逻辑一致，避免目录名误命中扩展名）
+func filterPathsByExtSet(paths []string, rule string, set map[string]bool, keep bool, reasons map[string]string) []string {
 	if len(set) == 0 {
-		return paths, nil
+		return paths
 	}
 	kept := make([]string, 0, len(paths))
 	for _, p := range paths {
 		hit := hitExtSet(strings.ToLower(filepath.Base(p)), set)
 		if hit == keep {
 			kept = append(kept, p)
+		} else {
+			reasons[p] = rule
 		}
 	}
-	if excluded := len(paths) - len(kept); excluded > 0 {
-		return kept, &FilterStat{Rule: rule, Detail: joinExtSet(set), Excluded: excluded}
-	}
-	return paths, nil
+	return kept
 }
 
-// filterPathsByKeywordSet 按关键词集合对相对路径列表过滤（keep=true 保留命中，keep=false 排除命中）
-func filterPathsByKeywordSet(paths []string, rule string, keywords []string, keep bool) ([]string, *FilterStat) {
+// filterPathsByKeywordSet 按关键词集合对相对路径列表过滤（keep=true 保留命中，keep=false 排除命中），
+// 被排除的路径在 reasons 中记为 rule
+func filterPathsByKeywordSet(paths []string, rule string, keywords []string, keep bool, reasons map[string]string) []string {
 	if len(keywords) == 0 {
-		return paths, nil
+		return paths
 	}
 	kept := make([]string, 0, len(paths))
 	for _, p := range paths {
 		hit := hitKeyword(strings.ToLower(filepath.ToSlash(p)), keywords)
 		if hit == keep {
 			kept = append(kept, p)
+		} else {
+			reasons[p] = rule
 		}
 	}
-	if excluded := len(paths) - len(kept); excluded > 0 {
-		return kept, &FilterStat{Rule: rule, Detail: strings.Join(keywords, ","), Excluded: excluded}
-	}
-	return paths, nil
+	return kept
 }
 
 // joinExtSet 将扩展名集合转为逗号分隔字符串（用于统计展示）
