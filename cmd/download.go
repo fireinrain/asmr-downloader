@@ -15,6 +15,7 @@ import (
 var (
 	hotDownloadDir string
 	hotCount       int
+	forceDownload  bool
 )
 
 var downloadCmd = &cobra.Command{
@@ -31,7 +32,7 @@ download 命令用于下载音声资源，支持单个 RJID、多项 RJID 批量
 
 选项：
   -d, --dir <目录路径>
-      指定文件保存目录（默认当前目录）。
+      指定文件保存目录（默认使用配置文件中的 downloader.download_dir，未设置时为当前目录）。
       示例：
         asmroner download RJ01000001 -d ./downloads
 
@@ -39,6 +40,11 @@ download 命令用于下载音声资源，支持单个 RJID、多项 RJID 批量
       热门模式下载数量（仅在 hot100 模式下生效）。
       示例：
         asmroner download hot100 -n 20
+
+  -f, --force
+      强制下载：跳过已存在文件检测，已下载的文件会被覆盖重下。
+      示例：
+        asmroner download RJ01000001 --force
 
 适用场景：
   - 指定 RJID 下载单个作品
@@ -55,6 +61,13 @@ download 命令用于下载音声资源，支持单个 RJID、多项 RJID 批量
 	Run: func(cmd *cobra.Command, args []string) {
 		keyword := args[0]
 
+		// 目录优先级：-d 显式指定 > 配置文件 downloader.download_dir > 当前目录
+		if !cmd.Flags().Changed("dir") {
+			if dir := strings.TrimSpace(model.AppConfig.Downloader.DownloadDir); dir != "" {
+				logger.Info("使用默认下载目录: %s", dir)
+				hotDownloadDir = dir
+			}
+		}
 		hotDownloadDir, _ = filepath.Abs(hotDownloadDir)
 
 		if err := os.MkdirAll(hotDownloadDir, os.ModePerm); err != nil {
@@ -70,6 +83,7 @@ download 命令用于下载音声资源，支持单个 RJID、多项 RJID 批量
 			logger.Fail("创建下载引擎管理器失败: %v", err)
 			return
 		}
+		engineManager.Force = forceDownload
 		ctx := context.Background()
 
 		// ------------------------------------
@@ -109,6 +123,7 @@ download 命令用于下载音声资源，支持单个 RJID、多项 RJID 批量
 func init() {
 	rootCmd.AddCommand(downloadCmd)
 
-	downloadCmd.Flags().StringVarP(&hotDownloadDir, "dir", "d", "./", "文件保存目录（默认当前目录）")
+	downloadCmd.Flags().StringVarP(&hotDownloadDir, "dir", "d", "./", "文件保存目录（默认使用配置中的 download_dir，否则当前目录）")
 	downloadCmd.Flags().IntVarP(&hotCount, "number", "n", 1, "下载热门作品数量（当输入hot100 时生效）")
+	downloadCmd.Flags().BoolVarP(&forceDownload, "force", "f", false, "强制下载，覆盖已存在的文件")
 }

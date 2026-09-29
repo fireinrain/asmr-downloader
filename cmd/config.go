@@ -37,6 +37,7 @@ config 命令用于初始化或重置本程序的配置文件，并以“交互�
   - 优先媒体格式（如 flac、mp3）
   - 下载扩展名白名单（如 .mp3,.png,.jpg）
   - 下载排除扩展名黑名单（如 .mp4,.webm）
+  - 路径关键词白/黑名单（如 SEあり / SEなし，按目录+文件名过滤）
   - 下载目录命名格式（占位符 {rjid} {date} {subtitle} {title}）
   - 同步/下载的 QPS 限流配置
   - 请求抖动（Jitter）设置，用于分散负载、降低风控风险
@@ -91,6 +92,7 @@ func InitConfig(reader *bufio.Reader, configFile string) {
 	maxWorkers := promptInt(reader, "最大并发数（默认：5）: ", 5)
 	maxRetries := promptInt(reader, "最大重试次数（默认：3）: ", 3)
 	syncDataFolder := prompt(reader, "同步数据存放目录（默认：./syncdata）: ", "./syncdata")
+	downloadDir := prompt(reader, "默认下载目录（可选，留空则 download 在当前目录，-d 指定的优先级高于这个配置项目）: ", "")
 
 	syncWantedSize := prompt(reader, "同步容量限制（1MB/GB/TB/PB，默认：200MB）: ", "200MB")
 	preferMedia := prompt(reader, "优先媒体格式 [all | mp3>wav>flac]（默认：all）: ", "all")
@@ -98,6 +100,11 @@ func InitConfig(reader *bufio.Reader, configFile string) {
 	// ----- 下载扩展名白/黑名单 -----
 	includeExt := prompt(reader, "只下载的文件扩展名（白名单，逗号分隔，如 .mp3,.png,.jpg，留空不筛选）: ", "")
 	excludeExt := prompt(reader, "排除的文件扩展名（黑名单，逗号分隔，如 .mp4,.webm，留空不过滤）: ", "")
+	// ----------------------------
+
+	// ----- 路径关键词白/黑名单 -----
+	includeKeyword := prompt(reader, "只下载路径包含关键词的文件（白名单，逗号分隔，如 SEあり，匹配目录+文件名，留空不筛选）: ", "")
+	excludeKeyword := prompt(reader, "排除路径包含关键词的文件（黑名单，逗号分隔，如 SEなし,no se，匹配目录+文件名，留空不过滤）: ", "")
 	// ----------------------------
 
 	// ----- 下载目录命名格式 -----
@@ -136,10 +143,13 @@ func InitConfig(reader *bufio.Reader, configFile string) {
 	viper.Set("downloader.max_workers", maxWorkers)
 	viper.Set("downloader.max_retries", maxRetries)
 	viper.Set("downloader.sync_data_folder", syncDataFolder)
+	viper.Set("downloader.download_dir", downloadDir)
 	viper.Set("downloader.sync_wanted_size", syncWantedSize)
 	viper.Set("downloader.prefer_media", preferMedia)
 	viper.Set("downloader.include_ext", includeExt)
 	viper.Set("downloader.exclude_ext", excludeExt)
+	viper.Set("downloader.include_keyword", includeKeyword)
+	viper.Set("downloader.exclude_keyword", excludeKeyword)
 	viper.Set("downloader.idm_path", idmPath)
 	viper.Set("downloader.folder_name_format", folderNameFormat)
 
