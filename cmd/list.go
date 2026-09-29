@@ -14,6 +14,8 @@ import (
 
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
+
+	"github.com/fatih/color"
 )
 
 var listDetail bool
@@ -228,8 +230,7 @@ func buildFileTree(files []listFileEntry) *treeNode {
 	for _, f := range files {
 		node := root
 		if f.dir != "" {
-			parts := strings.Split(f.dir, string(filepath.Separator))
-			for _, part := range parts {
+			for part := range strings.SplitSeq(f.dir, string(filepath.Separator)) {
 				child, ok := node.dirs[part]
 				if !ok {
 					child = newTreeNode()
@@ -247,9 +248,11 @@ func buildFileTree(files []listFileEntry) *treeNode {
 func printListDetail(workID string, files []listFileEntry, keptSet map[string]bool, reasons map[string]string) {
 	root := buildFileTree(files)
 
-	logger.Info("文件明细 (✓ 保留 / ✗ 被 <规则名> 过滤):")
+	logger.Info("文件明细 (%s 保留 / %s 被 <规则名> 过滤):",
+		color.GreenString("✓"), color.RedString("✗"))
 	var b strings.Builder
-	b.WriteString(workID + "/\n")
+	b.WriteString(workID)
+	b.WriteString("/\n")
 	renderTree(&b, root, "", keptSet, reasons)
 	fmt.Print(b.String())
 }
@@ -270,22 +273,29 @@ func renderTree(b *strings.Builder, node *treeNode, prefix string, keptSet map[s
 	idx := 0
 	for _, name := range dirNames {
 		connector, childPrefix := treeBranch(prefix, idx == total-1)
-		b.WriteString(connector + name + "/\n")
+		b.WriteString(connector)
+		b.WriteString(name)
+		b.WriteString("/\n")
 		renderTree(b, node.dirs[name], childPrefix, keptSet, reasons)
 		idx++
 	}
 	for _, f := range files {
 		connector, _ := treeBranch(prefix, idx == total-1)
-		status := "✓ 保留"
-		if !keptSet[f.relPath()] {
+		// 保留=绿色，被过滤=红色（fatih/color 在非终端输出时自动关闭颜色）
+		var line string
+		if keptSet[f.relPath()] {
+			line = color.GreenString("%s  ✓ 保留", f.name)
+		} else {
 			// 标注命中规则：白名单（include_*）表示未命中被挡，黑名单（exclude_*）表示命中被排除
 			if rule := reasons[f.relPath()]; rule != "" {
-				status = "✗ 被 " + rule + " 过滤"
+				line = color.RedString("%s  ✗ 被 %s 过滤", f.name, rule)
 			} else {
-				status = "✗ 被过滤"
+				line = color.RedString("%s  ✗ 被过滤", f.name)
 			}
 		}
-		b.WriteString(connector + f.name + "  " + status + "\n")
+		b.WriteString(connector)
+		b.WriteString(line)
+		b.WriteString("\n")
 		idx++
 	}
 }
