@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,6 +27,9 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+// pageParamRe 匹配查询串中的 page 分页参数（保留 ?/& 前缀）
+var pageParamRe = regexp.MustCompile(`([?&])page=\d+`)
 
 // EngineManager 下载器管理结构
 type EngineManager struct {
@@ -811,9 +815,9 @@ func (m *EngineManager) SearchForCountResult(ctx context.Context, asmrOneQuerySt
 			page++
 		}
 		for i := 2; i <= page; i++ {
-			// 构建分页URL
+			// 构建分页URL（匹配任意当前页码，避免用户显式传 page 时替换失效）
 			var newResult model.SearchResult
-			pageURL := strings.ReplaceAll(url, "&page=1", fmt.Sprintf("&page=%d", i))
+			pageURL := pageParamRe.ReplaceAllString(url, fmt.Sprintf("${1}page=%d", i))
 			// 发送GET请求
 			resp, err := m.Client.R().
 				SetHeader("Authorization", m.JWTToken).

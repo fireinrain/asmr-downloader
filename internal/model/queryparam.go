@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
@@ -18,8 +19,6 @@ type QueryParams struct {
 }
 
 type SearchPair struct {
-	// $va:床貓$ $duration:40m$ $sell:100$ 下面的字段都支持反选
-
 	//搜索标签
 	Tag string `json:"tag"`
 	//搜索社团
@@ -62,7 +61,7 @@ func NewQueryParams(rawQueryStr string) *QueryParams {
 		SearchPair: nil,
 		PageInfo: &PageInfo{
 			Order: "release",
-			//order 包含:
+			//order 可选值:
 			//release 发售时间倒序
 			//dl_count 下载量倒序
 			//create_date 创建时间倒序
@@ -83,47 +82,67 @@ func NewQueryParams(rawQueryStr string) *QueryParams {
 	}
 }
 
+// 严格语法: 关键词,排除词@过滤条件?分页参数
+//
+//	修女,-触手@tag:内射/中出,va:陽向葵ゅか,duration:1h,-price:1000?order=dl_count&sort=desc
+//
+// 规则:
+//   - 三段用 @ 和 ? 显式分隔，段内多值一律逗号分隔
+//   - 过滤条件必须写在 @ 之后；- 前缀表示排除/反选
+//   - 同一过滤条件/分页参数出现多次、出现未知 key，均直接报错
 func (p *QueryParams) ParseQueryStr() error {
-	if p.QueryStr == "" {
-		return errors.New("empty query string")
+	if strings.TrimSpace(p.QueryStr) == "" {
+		return errors.New("查询字符串为空")
 	}
 	queryStr := p.QueryStr
 
-	//  修女,洗脑,-触手
-	//  $tag:内射/中出$ $circle:青春×フェティシズム$ $va:陽向葵ゅか$ $duration:1h$ $rate:4.75$ $price:1000$ $sell:700$ $age:adult$ $-lang:JPN$?order=dl_count&sort=desc&page=1&pageSize=20&subtitle=0&includeTranslationWorks=true
-	// 	tag:内射/中出,circle:青春×フェティシズム,va:陽向葵ゅか,duration:1h,rate:4.75,-price:1000,sell:700,age:adult,-lang:JPN
-	//	order=dl_count&sort=desc&page=1&pageSize=20&subtitle=0&includeTranslationWorks=true
-
-	//完整的查询
-	//修女,洗脑,-触手@tag:内射/中出,circle:青春×フェティシズム,va:陽向葵ゅか,duration:1h,rate:4.75,-price:1000,sell:700,age:adult,-lang:JPN?order=dl_count&sort=desc&page=1&pageSize=20&subtitle=0&includeTranslationWorks=true
-
-	if strings.Contains(queryStr, "@") {
-		// 解析普通文本
-		plainText := queryStr[:strings.Index(queryStr, "@")]
-		plainTexts := parsePlainText(plainText)
-		p.PlainTexts = plainTexts
-		queryStr = strings.ReplaceAll(queryStr, plainText+"@", "")
-
+	// 先拆分页参数: ...?order=...&sort=...
+	pagePart := ""
+	if i := strings.Index(queryStr, "?"); i >= 0 {
+		pagePart = queryStr[i+1:]
+		queryStr = queryStr[:i]
 	}
-	if strings.Contains(queryStr, "?") {
-		searchPairStr := queryStr[:strings.Index(queryStr, "?")]
-		searchPair := parseSearchPair(searchPairStr)
-		p.SearchPair = &searchPair
-		queryStr = strings.ReplaceAll(queryStr, searchPairStr+"?", "")
 
+	// 再拆普通文本与搜索对: 普通文本@搜索对
+	plainPart := queryStr
+	pairPart := ""
+	if i := strings.Index(queryStr, "@"); i >= 0 {
+		plainPart = queryStr[:i]
+		pairPart = queryStr[i+1:]
 	}
-	split := strings.Split(queryStr, "?")
-	searchPairStr := split[0]
-	if searchPairStr != "" {
-		searchPair := parseSearchPair(searchPairStr)
-		p.SearchPair = &searchPair
+
+	// 关键词部分: 全部作为普通文本，但识别为过滤条件的 token 要求写在 @ 之后
+	if plainTokens := splitTokens(plainPart); len(plainTokens) > 0 {
+		for _, token := range plainTokens {
+			if hasSearchPairPrefix(token) {
+				return fmt.Errorf("过滤条件 %q 必须写在 @ 之后，例如: 关键词@%s", token, token)
+			}
+		}
+		p.PlainTexts = plainTokens
 	}
-	if len(split) > 1 {
-		pageInfo := parsePageInfo(split[1])
-		p.PageInfo = &pageInfo
+
+	// 过滤条件部分: 每个 token 必须是已识别的 key 前缀，同一条件不允许重复
+	if strings.Contains(pairPart, "@") {
+		return errors.New("过滤条件中存在多余的 @，只允许一个 @ 分隔关键词与过滤条件")
 	}
-	if len(p.PlainTexts) == 0 {
-		p.PlainTexts = []string{queryStr}
+	if pairTokens := splitTokens(pairPart); len(pairTokens) > 0 {
+		searchPair, err := parseSearchPair(pairTokens)
+		if err != nil {
+			return err
+		}
+		p.SearchPair = searchPair
+	}
+
+	if pagePart != "" {
+		// 未指定的字段保留 NewQueryParams 的默认值
+		if err := parsePageInfo(pagePart, p.PageInfo); err != nil {
+			return err
+		}
+	}
+
+	// 关键词、过滤条件均未识别出任何内容
+	if len(p.PlainTexts) == 0 && p.SearchPair == nil {
+		return errors.New("未解析出任何关键词或过滤条件，语法: 关键词,排除词@过滤条件?分页参数")
 	}
 
 	// 标记为已解析
@@ -136,44 +155,23 @@ func (p *QueryParams) BuildAsmrOneQueryStr() (string, error) {
 	if !p.HasParsed {
 		return "", errors.New("query params not parsed")
 	}
-	builder := strings.Builder{}
-	// 构建普通文本部分
+	// 组装搜索关键字: 普通文本 + $搜索对$，以空格连接，不再引入前导空格
+	var parts []string
 	if len(p.PlainTexts) > 0 {
-		plainText := " " + strings.Join(p.PlainTexts, " ")
-		builder.WriteString(plainText)
+		parts = append(parts, strings.Join(p.PlainTexts, " "))
 	}
 	if p.SearchPair != nil {
 		// 构建搜索参数
-		if p.SearchPair.Tag != "" {
-			builder.WriteString(" " + "$" + p.SearchPair.Tag + "$")
-		}
-		if p.SearchPair.Circle != "" {
-			builder.WriteString(" " + "$" + p.SearchPair.Circle + "$")
-		}
-		if p.SearchPair.Va != "" {
-			builder.WriteString(" " + "$" + p.SearchPair.Va + "$")
-		}
-		if p.SearchPair.Duration != "" {
-			builder.WriteString(" " + "$" + p.SearchPair.Duration + "$")
-		}
-		if p.SearchPair.Rate != "" {
-			builder.WriteString(" " + "$" + p.SearchPair.Rate + "$")
-		}
-		if p.SearchPair.Price != "" {
-			builder.WriteString(" " + "$" + p.SearchPair.Price + "$")
-		}
-		if p.SearchPair.Sell != "" {
-			builder.WriteString(" " + "$" + p.SearchPair.Sell + "$")
-		}
-		if p.SearchPair.Age != "" {
-			builder.WriteString(" " + "$" + p.SearchPair.Age + "$")
-		}
-		if p.SearchPair.Lang != "" {
-			builder.WriteString(" " + "$" + p.SearchPair.Lang + "$")
+		for _, item := range []string{
+			p.SearchPair.Tag, p.SearchPair.Circle, p.SearchPair.Va, p.SearchPair.Duration,
+			p.SearchPair.Rate, p.SearchPair.Price, p.SearchPair.Sell, p.SearchPair.Age, p.SearchPair.Lang,
+		} {
+			if item != "" {
+				parts = append(parts, "$"+item+"$")
+			}
 		}
 	}
-	s := builder.String()
-	encodedUrl := url.QueryEscape(s)
+	encodedUrl := url.QueryEscape(strings.Join(parts, " "))
 	encodedUrl = strings.ReplaceAll(encodedUrl, "+", "%20")
 
 	s2 := strings.Builder{}
@@ -189,68 +187,156 @@ func (p *QueryParams) BuildAsmrOneQueryStr() (string, error) {
 	return encodedUrl + s2.String(), nil
 }
 
-func parsePlainText(s string) []string {
-	// 按逗号分隔
-	items := strings.Split(s, ",")
-	// 移除首尾空格
-	for i, item := range items {
-		items[i] = strings.TrimSpace(item)
+// splitTokens 按逗号分隔并移除首尾空格，丢弃空 token
+func splitTokens(s string) []string {
+	var tokens []string
+	for _, item := range strings.Split(s, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			tokens = append(tokens, item)
+		}
 	}
-	return items
+	return tokens
 }
 
 // ---------------------------------------
 // 解析搜索部分（tag/circle/va/...）
 // ---------------------------------------
-func parseSearchPair(s string) SearchPair {
-	pair := SearchPair{}
 
-	if s == "" {
-		return pair
-	}
+// searchPairPrefixes 支持的全部 key 前缀（配合反选 "-" 使用）
+var searchPairPrefixes = []string{
+	"tag:", "circle:", "va:", "duration:", "rate:", "price:", "sell:", "age:", "lang:",
+}
 
-	items := strings.Split(s, ",")
-	for _, item := range items {
-		// 保持原样，不拆 key/value，只识别 key 对应字段
-		switch {
-		case strings.HasPrefix(item, "tag:") || strings.HasPrefix(item, "-tag:"):
-			pair.Tag = item
-		case strings.HasPrefix(item, "circle:") || strings.HasPrefix(item, "-circle:"):
-			pair.Circle = item
-		case strings.HasPrefix(item, "va:") || strings.HasPrefix(item, "-va:"):
-			pair.Va = item
-		case strings.HasPrefix(item, "duration:") || strings.HasPrefix(item, "-duration:"):
-			pair.Duration = item
-		case strings.HasPrefix(item, "rate:") || strings.HasPrefix(item, "-rate:"):
-			pair.Rate = item
-		case strings.HasPrefix(item, "price:") || strings.HasPrefix(item, "-price:"):
-			pair.Price = item // 保留原样：price:100 / -price:1000
-		case strings.HasPrefix(item, "sell:") || strings.HasPrefix(item, "-sell:"):
-			pair.Sell = item
-		case strings.HasPrefix(item, "age:") || strings.HasPrefix(item, "-age:"):
-			pair.Age = item
-		case strings.HasPrefix(item, "lang:") || strings.HasPrefix(item, "-lang:"):
-			pair.Lang = item // 保留原样：lang:JPN / -lang:JPN
+// hasSearchPairPrefix 判断 token 是否为已识别的搜索对前缀（含反选 "-" 变体）
+func hasSearchPairPrefix(item string) bool {
+	s := strings.TrimPrefix(item, "-")
+	for _, prefix := range searchPairPrefixes {
+		if strings.HasPrefix(s, prefix) {
+			return true
 		}
 	}
+	return false
+}
 
-	return pair
+// parseSearchPair 逐个解析过滤条件 token，要求 key 已识别且不重复
+func parseSearchPair(tokens []string) (*SearchPair, error) {
+	pair := &SearchPair{}
+
+	for _, item := range tokens {
+		// 保持原样，不拆 value，只识别 key 对应字段
+		key := strings.TrimPrefix(item, "-")
+		if i := strings.Index(key, ":"); i >= 0 {
+			key = key[:i]
+		}
+		var field *string
+		switch key {
+		case "tag":
+			field = &pair.Tag
+		case "circle":
+			field = &pair.Circle
+		case "va":
+			field = &pair.Va
+		case "duration":
+			field = &pair.Duration
+		case "rate":
+			field = &pair.Rate
+		case "price":
+			field = &pair.Price
+		case "sell":
+			field = &pair.Sell
+		case "age":
+			field = &pair.Age
+		case "lang":
+			field = &pair.Lang
+		default:
+			return nil, fmt.Errorf("未识别的过滤条件 %q，支持: %s", item, strings.Join(searchPairPrefixes, " "))
+		}
+		if *field != "" {
+			return nil, fmt.Errorf("过滤条件 %q 重复出现，同一条件只允许写一次", key)
+		}
+		*field = item
+	}
+
+	return pair, nil
 }
 
 // ---------------------------------------
 // 解析分页 PageInfo 部分
 // ---------------------------------------
-func parsePageInfo(q string) PageInfo {
-	m, _ := url.ParseQuery(q)
-	pi := PageInfo{}
 
-	pi.Order = m.Get("order")
-	pi.Sort = m.Get("sort")
-	pi.Subtitle = m.Get("subtitle")
-	pi.IncludeTranslationWorks = m.Get("includeTranslationWorks") == "true"
+// pageKeys 分页参数支持的全部 key
+var pageKeys = []string{"order", "sort", "subtitle", "page", "pageSize", "includeTranslationWorks"}
 
-	pi.Page, _ = strconv.Atoi(m.Get("page"))
-	pi.PageSize, _ = strconv.Atoi(m.Get("pageSize"))
+// orderValues order 参数支持的全部取值
+var orderValues = map[string]bool{
+	"release": true, "dl_count": true, "create_date": true, "rating": true, "price": true,
+	"rate_average_2dp": true, "review_count": true, "id": true, "nsfw": true,
+}
 
-	return pi
+// parsePageInfo 解析分页参数并合并进现有 PageInfo，未指定的字段保留默认值；
+// 未知 key、重复 key、非法取值均直接报错
+func parsePageInfo(q string, pi *PageInfo) error {
+	m, err := url.ParseQuery(q)
+	if err != nil {
+		return fmt.Errorf("分页参数解析失败: %w", err)
+	}
+
+	for k, vs := range m {
+		if len(vs) > 1 {
+			return fmt.Errorf("分页参数 %q 重复出现，同一参数只允许写一次", k)
+		}
+		if !contains(pageKeys, k) {
+			return fmt.Errorf("未知分页参数 %q，支持: %s", k, strings.Join(pageKeys, "/"))
+		}
+	}
+
+	if v := m.Get("order"); v != "" {
+		if !orderValues[v] {
+			return fmt.Errorf("order 取值 %q 无效，支持: release/dl_count/create_date/rating/price/rate_average_2dp/review_count/id/nsfw", v)
+		}
+		pi.Order = v
+	}
+	if v := m.Get("sort"); v != "" {
+		if v != "desc" && v != "asc" {
+			return fmt.Errorf("sort 取值 %q 无效，支持: desc/asc", v)
+		}
+		pi.Sort = v
+	}
+	if v := m.Get("subtitle"); v != "" {
+		if v != "0" && v != "1" {
+			return fmt.Errorf("subtitle 取值 %q 无效，支持: 0(全部)/1(仅含字幕)", v)
+		}
+		pi.Subtitle = v
+	}
+	if v := m.Get("includeTranslationWorks"); v != "" {
+		if v != "true" && v != "false" {
+			return fmt.Errorf("includeTranslationWorks 取值 %q 无效，支持: true/false", v)
+		}
+		pi.IncludeTranslationWorks = v == "true"
+	}
+	if v := m.Get("page"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			return fmt.Errorf("page 取值 %q 无效，须为正整数", v)
+		}
+		pi.Page = n
+	}
+	if v := m.Get("pageSize"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			return fmt.Errorf("pageSize 取值 %q 无效，须为正整数", v)
+		}
+		pi.PageSize = n
+	}
+
+	return nil
+}
+
+func contains(list []string, s string) bool {
+	for _, item := range list {
+		if item == s {
+			return true
+		}
+	}
+	return false
 }
