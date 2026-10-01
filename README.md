@@ -2,7 +2,6 @@
   <a href="README.en.md">English</a> | <b>简体中文</b>
 </div>
 
-
 ## 📖 项目简介
 
 ASMRoner 是一款 Go 语言命令行工具，用于搜索、下载、同步 asmr.one 音声作品，并提供简易 Web 播放界面。
@@ -27,13 +26,13 @@ go build -o asmroner
 
 进入交互式配置向导，按提示填写。下面是最关键的几项说明：
 
-| 配置项 | 说明 |
-|--------|------|
+| 配置项                  | 说明                                                                                                 |
+| ----------------------- | ---------------------------------------------------------------------------------------------------- |
 | **用户账号 / 用户密码** | **asmr.one 网站的登录账号和密码**。如果没有注册过，直接回车使用默认值 `guest` / `guest` 即可正常使用 |
-| API 接口地址 | 留空即可，程序会自动探测最快的站点 |
-| 代理地址 | 如无需代理直接回车跳过；支持 `http://`、`https://`、`socks5://`（含认证） |
-| 同步数据存放目录 | 下载文件的保存位置，默认 `./syncdata` |
-| 同步容量限制 | 控制 sync download 的总下载量上限，如 `200MB`、`2GB` |
+| API 接口地址            | 留空使用默认官方接口（api.asmr-300.com），也可填写自定义 API 地址                                    |
+| 代理地址                | 如无需代理直接回车跳过；支持 `http://`、`https://`、`socks5://`（含认证）                            |
+| 同步数据存放目录        | 下载文件的保存位置，默认 `./syncdata`                                                                |
+| 同步容量限制            | 控制 sync download 的总下载量上限，如 `200MB`、`2GB`                                                 |
 
 > 💡 其余选项均可直接回车使用默认值，后续也可以重新运行 `./asmroner config` 修改。
 
@@ -89,16 +88,16 @@ go build -o asmroner
 
 ## 📸 截图
 
-| 配置 | 搜索 |
-|:---:|:---:|
-| ![配置](dist/config.png) | ![搜索](dist/search.png) |
-| **下载** | **同步** |
-| ![下载](dist/download.png) | ![同步](dist/sync.png) |
-| **同步下载** | **统计** |
-| ![同步下载](dist/sync-down.png) | ![统计](dist/sync-report.png) |
-| **Web 界面** | **Web 界面 2** |
-| ![Web界面](dist/listen.png) | ![Web界面2](dist/listen2.png) |
-| **export 界面** | **export 界面 2** |
+|              配置               |               搜索               |
+| :-----------------------------: | :------------------------------: |
+|    ![配置](dist/config.png)     |     ![搜索](dist/search.png)     |
+|            **下载**             |             **同步**             |
+|   ![下载](dist/download.png)    |      ![同步](dist/sync.png)      |
+|          **同步下载**           |             **统计**             |
+| ![同步下载](dist/sync-down.png) |  ![统计](dist/sync-report.png)   |
+|          **Web 界面**           |          **Web 界面 2**          |
+|   ![Web界面](dist/listen.png)   |  ![Web界面2](dist/listen2.png)   |
+|         **export 界面**         |        **export 界面 2**         |
 | ![export界面](dist/export1.png) | ![export界面2](dist/export2.png) |
 
 <details>
@@ -110,7 +109,7 @@ go build -o asmroner
 - **同步**：全量元数据同步（含同步率统计）、容量感知批量下载控制、状态跟踪（PENDING/COMPLETED/FAILED）、失败重试（清空旧目录重新下载）、CSV/JSON 导出同步状态
 - **Web 界面**：可视化浏览、浏览器内音频播放、分页 API、自动打开浏览器、优雅关闭
 - **配置**：交互式初始化，支持代理（HTTP/SOCKS5，含认证）、令牌桶限流 + 随机抖动、自定义目录命名格式（{rjid} {date} {subtitle} {title}）、IDM 路径配置
-- **站点探测**：自动获取 asmr.one 最新可用域名和最快响应 API 地址（多源 fallback）
+- **站点配置**：默认使用官方 API 地址（api.asmr-300.com），支持通过配置自定义接口地址
 - **版本信息**：内置版本号、构建时间、作者信息（支持 ldflags 编译注入）
 
 </details>
@@ -120,37 +119,116 @@ go build -o asmroner
 
 支持 asmr.one 完整搜索语法，格式：`关键词,排除词@过滤条件?分页参数`
 
+语法规则（严格校验，写错直接报错）：
+
+1. 三段用 `@` 和 `?` 显式分隔，可整体省略不需要的段（省略过滤段时不写 `@`）
+2. 段内多值一律用逗号分隔
+3. `-` 前缀表示排除/反选
+4. 过滤条件必须写在 `@` 之后，写在 `@` 之前会报错
+5. 同一过滤条件/分页参数只允许出现一次
+
+**语法文法**（EBNF）：
+
+```ebnf
+query        = withKeywords | filtersOnly ;
+
+withKeywords = keywords , [ "@" , filters ] , [ "?" , params ] ;
+filtersOnly  = "@" , filters , [ "?" , params ] ;
+
+keywords     = keyword , { "," , keyword } ;
+keyword      = [ "-" ] , text ;                    (* "-" 前缀 = 排除 *)
+
+filters      = filter , { "," , filter } ;
+filter       = [ "-" ] , key , ":" , value ;       (* "-" 前缀 = 反选 *)
+             (* key ∈ tag | circle | va | duration | rate | price | sell | age | lang *)
+
+params       = param , { "&" , param } ;
+param        = key , "=" , value ;
+             (* key ∈ order | sort | subtitle | page | pageSize | includeTranslationWorks *)
+```
+
+文法之外的约束：至少一段非空（仅 `?params` 不合法）；`filters` 内 `key` 不得重复；`params` 内 `key` 不得重复；`text`/`value` 中不得包含 `,` `@` `?` 分隔符；各 `value` 取值见下表。
+
+| 写法                            | 含义                            |
+| ------------------------------- | ------------------------------- |
+| `护士`                          | 只有关键词                      |
+| `护士@duration:1h`              | 关键词 + 过滤条件               |
+| `@va:陽向葵ゅか?subtitle=1`     | 只有过滤条件 + 分页参数         |
+| `护士?order=dl_count&sort=desc` | 关键词 + 分页参数（无过滤条件） |
+
+**普通关键词**（`@` 之前，逗号分隔）：
+
+| 写法         | 说明                 |
+| ------------ | -------------------- |
+| `护士`       | 单关键词             |
+| `修女,洗脑`  | 多关键词，需同时命中 |
+| `修女,-触手` | `-` 前缀排除关键词   |
+
+> 💡 未指定的分页参数使用默认值（order=release / sort=desc / page=1 / pageSize=20）。
+
 **过滤条件**（`@` 之后，逗号分隔，前缀 `-` 表示反选）：
 
-| 条件 | 格式 | 说明 |
-|------|------|------|
-| tag | `tag:内射/中出` | 按标签筛选（支持 `/` 多值） |
-| circle | `circle:社团名` | 按社团筛选 |
-| va | `va:声优名` | 按声优筛选 |
-| duration | `duration:1h` | 时长大于指定值 |
-| rate | `rate:4.5` | 评分大于指定值 |
-| price | `price:1000` 或 `-price:2000` | 价格筛选（反选=小于） |
-| sell | `sell:500` | 销量大于指定值 |
-| age | `age:adult` | 年龄分级 |
-| lang | `lang:JPN` 或 `-lang:JPN` | 语言筛选/排除 |
+| 条件     | 格式                          | 说明                        |
+| -------- | ----------------------------- | --------------------------- |
+| tag      | `tag:内射/中出`               | 按标签筛选（支持 `/` 多值） |
+| circle   | `circle:社团名`               | 按社团筛选                  |
+| va       | `va:声优名`                   | 按声优筛选                  |
+| duration | `duration:1h`                 | 时长大于指定值              |
+| rate     | `rate:4.5`                    | 评分大于指定值              |
+| price    | `price:1000` 或 `-price:2000` | 价格筛选（反选=小于）       |
+| sell     | `sell:500`                    | 销量大于指定值              |
+| age      | `age:adult`                   | 年龄分级                    |
+| lang     | `lang:JPN` 或 `-lang:JPN`     | 语言筛选/排除               |
 
 **分页参数**（`?` 之后，`&` 分隔）：
 
-| 参数 | 说明 | 可选值 |
-|------|------|--------|
-| order | 排序字段 | release / dl_count / rate_average_2dp / review_count / price / id / nsfw |
-| sort | 排序方向 | desc / asc |
-| subtitle | 字幕筛选 | 0（全部）/ 1（仅含字幕） |
-| page | 页码 | 正整数 |
-| pageSize | 每页条数 | 正整数 |
+| 参数                    | 说明             | 可选值                                                                                          |
+| ----------------------- | ---------------- | ----------------------------------------------------------------------------------------------- |
+| order                   | 排序字段         | release / dl_count / create_date / rating / price / rate_average_2dp / review_count / id / nsfw |
+| sort                    | 排序方向         | desc / asc                                                                                      |
+| subtitle                | 字幕筛选         | 0（全部）/ 1（仅含字幕）                                                                        |
+| page                    | 页码             | 正整数                                                                                          |
+| pageSize                | 每页条数         | 正整数                                                                                          |
+| includeTranslationWorks | 是否包含翻译作品 | true / false                                                                                    |
 
-**示例**：
+**组合示例**：
+
 ```bash
-# 搜索含"护士"，排除"中出"，时长>1小时，按下载量排序
-./asmroner search "护士,-中出@duration:1h?order=dl_count&sort=desc" -c 50
+# 1) 纯关键词 / 多关键词
+./asmroner search "护士" -c 10
+./asmroner search "修女,洗脑" -c 10
 
-# 搜索特定声优、含字幕的成人向作品
+# 2) 关键词 + 排除词
+./asmroner search "修女,-触手" -c 10
+
+# 3) 只给过滤条件（省略关键词）
+./asmroner search "@va:陽向葵ゅか" -c 20
+./asmroner search "@tag:耳かき,age:adult" -c 20
+
+# 4) 关键词 + 过滤条件（时长 > 1 小时）
+./asmroner search "护士,-中出@duration:1h" -c 50
+
+# 5) 过滤条件 + 排序 / 字幕
+./asmroner search "护士,-中出@duration:1h?order=dl_count&sort=desc" -c 50
 ./asmroner search "@va:陽向葵ゅか,age:adult?subtitle=1" -c 20
+
+# 6) 翻页：从第 2 页开始取（-c 不超过 pageSize 时直接返回该页）
+./asmroner search "护士?order=dl_count&sort=desc&page=2&pageSize=50" -c 50
+
+# 7) 反选过滤条件：排除标签 / 语言 / 免费作品
+./asmroner search "@tag:中出,-lang:JPN" -c 20
+./asmroner search "@-price:0" -c 20
+
+# 8) 多条件叠加：销量 > 500 且评分 > 4.0
+./asmroner search "@sell:500,rate:4.0" -c 20
+
+# 9) 按 RJID 搜索（单个 / 批量）
+./asmroner search "RJ01037721"
+./asmroner search "RJ01037721,RJ02000001"
+
+# 10) 搜索 + 下载 / 导出，同样支持上述全部语法
+./asmroner search download "@va:陽向葵ゅか?subtitle=1" -d ./downloads -s 20
+./asmroner search export "护士,-中出@duration:1h?order=dl_count&sort=desc" -n 100 -f data.json
 ```
 
 </details>
@@ -166,7 +244,7 @@ account = "guest"
 password = "guest"
 
 [downloader]
-api_url = ""                # 留空自动获取最快站点（多源探测 fallback）
+api_url = ""                # API 接口地址，留空使用默认官方接口 https://api.asmr-300.com
 proxy_url = ""              # 支持 http / https / socks5（含用户名密码认证）
 max_workers = 5             # 并发 Worker 数
 max_retries = 3             # 下载失败最大重试次数
@@ -178,6 +256,9 @@ exclude_ext = ""            # 扩展名黑名单，如 ".mp4,.webm"（排除命�
                             # 精确后缀匹配，支持嵌套扩展名：
                             # ".vtt" 匹配所有字幕文件
                             # ".mp3.vtt" 只匹配 mp3 的字幕文件
+include_keyword = ""        # 路径关键词白名单，如 "SEあり"（匹配目录+文件名，留空不筛选）
+exclude_keyword = ""        # 路径关键词黑名单，如 "SEなし,no se"（白黑名单同时配置时先白后黑）
+download_dir = ""           # 默认下载目录，留空则 download 使用当前目录（-d 指定时优先）
 folder_name_format = ""     # 下载目录命名格式，占位符: {rjid} {date} {subtitle} {title}
                             # 留空使用默认格式: {rjid}-{date}-{subtitle}-{title}
 idm_path = ""               # IDM 安装路径（可选，用于 export 命令生成下载脚本）
@@ -196,22 +277,22 @@ download_jitter_max = 5000  # 下载请求最大随机抖动（ms）
 <details>
 <summary><b>📋 命令选项速查</b></summary>
 
-| 命令 | 选项 | 说明 |
-|------|------|------|
-| `version` | — | 显示版本号、构建时间、开发者信息 |
-| `config` | — | 交互式初始化或重置配置文件 |
-| `search` | `-c` | 搜索结果数量（默认 10，自动分页合并） |
-| `search download` | `-d`, `-s` | 下载目录、下载数量（默认 100） |
-| `search export` | `-f`, `-n` | 导出文件名（.csv/.json），导出数量（默认 100） |
-| `list` | `-d` | 查看作品资源目录内的文件类型及数量；`-d/--detail` 列出所有文件 |
-| `download` | `-d`, `-n`, `-f` | 下载目录、hot100 模式下载数量、强制覆盖已下载文件 |
-| `export` | `-o`, `-n` | 输出目录、hot100 模式导出数量 |
-| `sync` | — | 仅同步元数据（自动比对本地/远端，显示同步率） |
-| `sync download` | `-d` | 同步后按容量限制逐批下载，含状态跟踪 |
-| `sync retry` | `-d` | 清空旧目录后重试下载失败的作品 |
-| `sync export` | `-s`, `-f` | 状态筛选（failed/success），导出文件名（.csv/.json） |
-| `sync report` | — | 打印下载统计数据（总数/完成/失败/待处理） |
-| `listen` | `-p` | Web 播放界面端口（默认 9999），支持分页 API |
+| 命令              | 选项             | 说明                                                           |
+| ----------------- | ---------------- | -------------------------------------------------------------- |
+| `version`         | —                | 显示版本号、构建时间、开发者信息                               |
+| `config`          | —                | 交互式初始化或重置配置文件                                     |
+| `search`          | `-c`             | 搜索结果数量（默认 10，自动分页合并）                          |
+| `search download` | `-d`, `-s`       | 下载目录、下载数量（默认 100）                                 |
+| `search export`   | `-f`, `-n`       | 导出文件名（.csv/.json），导出数量（默认 100）                 |
+| `list`            | `-d`             | 查看作品资源目录内的文件类型及数量；`-d/--detail` 列出所有文件 |
+| `download`        | `-d`, `-n`, `-f` | 下载目录、hot100 模式下载数量、强制覆盖已下载文件              |
+| `export`          | `-o`, `-n`       | 输出目录、hot100 模式导出数量                                  |
+| `sync`            | —                | 仅同步元数据（自动比对本地/远端，显示同步率）                  |
+| `sync download`   | `-d`             | 同步后按容量限制逐批下载，含状态跟踪                           |
+| `sync retry`      | `-d`             | 清空旧目录后重试下载失败的作品                                 |
+| `sync export`     | `-s`, `-f`       | 状态筛选（failed/success），导出文件名（.csv/.json）           |
+| `sync report`     | —                | 打印下载统计数据（总数/完成/失败/待处理）                      |
+| `listen`          | `-p`             | Web 播放界面端口（默认 9999），支持分页 API                    |
 
 </details>
 
@@ -239,15 +320,15 @@ asmroner/
 <details>
 <summary><b>🛠 技术栈</b></summary>
 
-| 组件 | 用途 |
-|------|------|
-| Cobra + Viper | CLI 框架 + 配置管理（TOML） |
-| GORM + SQLite | 数据持久化 |
+| 组件                           | 用途                                       |
+| ------------------------------ | ------------------------------------------ |
+| Cobra + Viper                  | CLI 框架 + 配置管理（TOML）                |
+| GORM + SQLite                  | 数据持久化                                 |
 | Resty + golang.org/x/net/proxy | HTTP 客户端（支持 HTTP/HTTPS/SOCKS5 代理） |
-| Pond | 并发工作池 |
-| golang.org/x/time/rate | 令牌桶限流 + 随机抖动（SmartLimiter） |
-| Gin | Web 服务 |
-| embed | 内嵌前端静态资源 |
+| Pond                           | 并发工作池                                 |
+| golang.org/x/time/rate         | 令牌桶限流 + 随机抖动（SmartLimiter）      |
+| Gin                            | Web 服务                                   |
+| embed                          | 内嵌前端静态资源                           |
 
 </details>
 
@@ -289,4 +370,4 @@ asmroner/
 
 **ASMRoner** — 每天晚上都有不同的妹妹陪你入睡 :)
 
-*最后更新：2025 年 7 月*
+_最后更新：2026 年 10 月_
