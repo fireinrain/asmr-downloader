@@ -292,24 +292,32 @@ func (m *EngineManager) DownloadOne(ctx context.Context, id string, storeBaseDir
 			task.Info("已按 exclude_keyword 排除 %d 个文件", skipped)
 		}
 	}
-	// 跳过已存在的文件（存在且非空视为已下载）；--force 时跳过检测直接覆盖重下
+	// 跳过已完整下载的文件（本地大小 == 远端大小 视为完成）；--force 时跳过检测直接覆盖重下。
+	// 本地比远端小（下载中断产生的不完整文件）会保留并进入断点续传流程
 	if m.Force {
 		task.Info("已启用强制下载，覆盖已存在的文件")
 	}
 	toDownload := make([][]string, 0, len(needDownloadUrls))
+	resumable := 0
 	for _, url := range needDownloadUrls {
-		if !m.Force && isFileExists(filepath.Join(url[1], url[2])) {
+		if !m.Force && isFileComplete(filepath.Join(url[1], url[2]), url) {
 			continue
+		}
+		if isResumable(filepath.Join(url[1], url[2]), url) {
+			resumable++
 		}
 		toDownload = append(toDownload, url)
 	}
 	skipped := len(needDownloadUrls) - len(toDownload)
 	if skipped > 0 {
-		task.Info("检测到 %d/%d 个文件已存在，跳过", skipped, len(needDownloadUrls))
+		task.Info("检测到 %d/%d 个文件已完整下载，跳过", skipped, len(needDownloadUrls))
+	}
+	if resumable > 0 {
+		task.Info("检测到 %d 个不完整文件，将断点续传", resumable)
 	}
 	if len(toDownload) == 0 {
 		if skipped > 0 {
-			task.Info("所有文件均已存在，无需重复下载")
+			task.Info("所有文件均已完整下载，无需重复下载")
 		}
 		return nil
 	}
@@ -321,7 +329,7 @@ func (m *EngineManager) DownloadOne(ctx context.Context, id string, storeBaseDir
 	for _, url := range toDownload {
 		//log.Println("Download file:", url[2])
 		group.SubmitErr(func() error {
-			return m.downloadFile(url[0], url[1], url[2], workBar)
+			return m.downloadFile(url[0], url[1], url[2], url[3], workBar)
 			//return nil
 		})
 	}
@@ -330,10 +338,40 @@ func (m *EngineManager) DownloadOne(ctx context.Context, id string, storeBaseDir
 	return err
 }
 
-// isFileExists 判断文件是否存在且非空（空文件视为未下载完成）
-func isFileExists(path string) bool {
+// remoteFileSize 从下载条目中解析远端文件大小（字节数）；无有效值时返回 -1（未知）
+func remoteFileSize(entry []string) int64 {
+	if len(entry) < 4 {
+		return -1
+	}
+	size, err := strconv.ParseInt(entry[3], 10, 64)
+	if err != nil || size <= 0 {
+		return -1
+	}
+	return size
+}
+
+// isFileComplete 判断文件是否已完整下载：文件存在且大小与远端一致；
+// 远端大小未知时退化为旧逻辑（存在且非空视为已下载）
+func isFileComplete(path string, entry []string) bool {
 	info, err := os.Stat(path)
-	return err == nil && !info.IsDir() && info.Size() > 0
+	if err != nil || info.IsDir() {
+		return false
+	}
+	remote := remoteFileSize(entry)
+	if remote < 0 {
+		return info.Size() > 0
+	}
+	return info.Size() == remote
+}
+
+// isResumable 判断文件是否为可断点续传的不完整文件（本地比远端小）
+func isResumable(path string, entry []string) bool {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return false
+	}
+	remote := remoteFileSize(entry)
+	return remote > 0 && info.Size() < remote
 }
 
 func (m *EngineManager) filterTargetAudioFormat(urls [][]string) [][]string {
@@ -462,7 +500,8 @@ func (m *EngineManager) ensureDirExists(tracks []model.Track, storeBaseDir strin
 	for _, t := range tracks {
 		if t.Type != "folder" {
 			// 音轨文件名同样需要净化，否则含非法字符的标题会导致写入失败
-			needDownloadUrls = append(needDownloadUrls, []string{t.MediaDownloadURL, path, utils.SanitizeFileName(t.Title)})
+			// url 数组约定: [0]=下载地址 [1]=保存目录 [2]=净化后的文件名 [3]=远端文件大小（字符串，未知为空）
+			needDownloadUrls = append(needDownloadUrls, []string{t.MediaDownloadURL, path, utils.SanitizeFileName(t.Title), strconv.FormatInt(t.Size, 10)})
 		} else {
 			// 仅对音轨（文件夹）标题做净化，路径本身已是合法组件拼接
 			name := utils.SanitizeFileName(t.Title)
@@ -655,11 +694,15 @@ func (m *EngineManager) buildMetaDataWorkUrls(totalCount int, pageSize int) []st
 	return urls
 }
 
-func (m *EngineManager) downloadFile(url string, path string, fileName string, workBar *utils.Bar) error {
+func (m *EngineManager) downloadFile(url string, path string, fileName string, remoteSizeStr string, workBar *utils.Bar) error {
 	storePath := filepath.Join(path, fileName)
 	maxRetries := m.Config.Downloader.MaxRetries
 	if maxRetries <= 0 {
 		maxRetries = 3
+	}
+	remoteSize := int64(-1)
+	if s, err := strconv.ParseInt(remoteSizeStr, 10, 64); err == nil && s > 0 {
+		remoteSize = s
 	}
 
 	var lastErr error
@@ -669,17 +712,23 @@ func (m *EngineManager) downloadFile(url string, path string, fileName string, w
 			// 指数退避: 2s, 4s, 8s...
 			backoff := time.Duration(1<<uint(attempt)) * time.Second
 			time.Sleep(backoff)
-			// 清理可能的残留文件
-			os.Remove(storePath)
+			// 保留已下载的部分，重试时从断点继续
 		}
 
-		_, err := m.doDownload(url, storePath, fileName)
+		// 本地文件不小于远端（已完整或异常残留）时清空重下；小于远端的保留用于断点续传
+		if remoteSize > 0 {
+			if info, err := os.Stat(storePath); err == nil && !info.IsDir() && info.Size() >= remoteSize {
+				_ = os.Remove(storePath)
+			}
+		}
+
+		_, err := m.doDownload(url, storePath, fileName, remoteSize)
 		if err == nil {
 			workBar.Increment() // 单文件成功，作品计数条 +1
 			return nil
 		}
 		lastErr = err
-		os.Remove(storePath) // 清理残留的半截文件，避免下次被误判为已下载
+		// 保留不完整的文件，重试或下次执行命令时自动断点续传
 
 		// 区分可重试与不可重试错误
 		var statusErr *StatusError
@@ -697,8 +746,8 @@ func (m *EngineManager) downloadFile(url string, path string, fileName string, w
 		return err
 	}
 
-	os.Remove(storePath) // 重试耗尽，清理残留文件
-	logger.Error("下载文件 %s 最终失败 (已重试 %d 次): %s", fileName, maxRetries, logger.SummarizeError(lastErr))
+	// 重试耗尽：保留不完整文件，下次执行命令时可断点续传
+	logger.Error("下载文件 %s 最终失败 (已重试 %d 次，不完整文件已保留可续传): %s", fileName, maxRetries, logger.SummarizeError(lastErr))
 	return fmt.Errorf("下载 %s 失败 (重试 %d 次后): %w", fileName, maxRetries, lastErr)
 }
 
@@ -708,26 +757,55 @@ type StatusError struct{ Code int }
 func (e *StatusError) Error() string { return fmt.Sprintf("HTTP %d", e.Code) }
 
 // doDownload 发起单次下载请求：流式写入磁盘并渲染进度条。
-// 返回写入的字节数与错误；状态码错误以 *StatusError 返回，由调用方决定是否重试。
-func (m *EngineManager) doDownload(url string, storePath string, fileName string) (int64, error) {
-	resp, err := m.Client.R().
-		SetDoNotParseResponse(true).
-		Get(url)
+// 支持断点续传：storePath 已存在且小于 remoteSize 时，携带 Range 头从已下载位置继续追加。
+// 返回本次写入的字节数与错误；状态码错误以 *StatusError 返回，由调用方决定是否重试。
+func (m *EngineManager) doDownload(url string, storePath string, fileName string, remoteSize int64) (int64, error) {
+	// 断点续传：本地已存在不完整文件（0 < 本地大小 < 远端大小）时从断点继续
+	var offset int64
+	if remoteSize > 0 {
+		if info, err := os.Stat(storePath); err == nil && !info.IsDir() && info.Size() > 0 && info.Size() < remoteSize {
+			offset = info.Size()
+		}
+	}
+
+	req := m.Client.R().SetDoNotParseResponse(true)
+	if offset > 0 {
+		req = req.SetHeader("Range", fmt.Sprintf("bytes=%d-", offset))
+	}
+	resp, err := req.Get(url)
 	if err != nil {
 		return 0, err
 	}
 	raw := resp.RawResponse
 	defer raw.Body.Close()
 
+	if offset > 0 && raw.StatusCode == http.StatusRequestedRangeNotSatisfiable {
+		// 416：请求的 Range 起点超出文件末尾。若本地已不小于远端则视为下载完成；
+		// 否则本地文件异常，删除后从头下载（递归一次，无 Range 不会再进入该分支）
+		if info, statErr := os.Stat(storePath); statErr == nil && (remoteSize <= 0 || info.Size() >= remoteSize) {
+			return info.Size(), nil
+		}
+		_ = os.Remove(storePath)
+		return m.doDownload(url, storePath, fileName, remoteSize)
+	}
 	if !resp.IsSuccess() {
 		return 0, &StatusError{Code: raw.StatusCode}
 	}
 
-	out, err := os.Create(storePath)
+	// 服务器忽略 Range 头返回 200 时必须从头截断写入，否则追加会导致文件损坏
+	appendMode := offset > 0 && raw.StatusCode == http.StatusPartialContent
+	flag := os.O_WRONLY | os.O_CREATE
+	if appendMode {
+		flag |= os.O_APPEND
+	} else {
+		flag |= os.O_TRUNC
+	}
+	out, err := os.OpenFile(storePath, flag, 0644)
 	if err != nil {
 		return 0, err
 	}
 
+	// 断点续传时 206 响应的 ContentLength 为剩余字节数
 	bar := utils.AddFileBar(fileName, raw.ContentLength)
 	src := bar.ProxyReader(raw.Body)
 	n, copyErr := io.Copy(out, src)
