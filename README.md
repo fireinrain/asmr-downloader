@@ -158,7 +158,7 @@ go build -o asmroner
 <details>
 <summary><b>⚙️ 配置文件说明</b></summary>
 
-配置文件路径：`.asmroner-data/config.toml`（TOML 格式）
+配置文件路径：`$HOME/.asmroner-data/config.toml`（TOML 格式，Windows 下位于 `C:\Users\<用户名>\.asmroner-data\config.toml`）
 
 ```toml
 [user]

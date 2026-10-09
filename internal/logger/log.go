@@ -33,7 +33,7 @@ var defaultLogger *Logger
 
 // Init 初始化全局日志器
 func Init() {
-	logPath := filepath.Join(consts.MetaDataDir, consts.FailedLogName)
+	logPath := filepath.Join(consts.MetaDataDir(), consts.FailedLogName)
 	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Fatalf("无法打开错误日志文件 %s: %v", logPath, err)

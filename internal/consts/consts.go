@@ -1,9 +1,23 @@
 package consts
 
-import "regexp"
+import (
+	"os"
+	"path/filepath"
+	"regexp"
+)
 
-// MetaDataDir 元数据存储目录
-const MetaDataDir = ".asmroner-data"
+// MetaDataDirName 元数据存储目录名（位于用户主目录 $HOME 下）
+const MetaDataDirName = ".asmroner-data"
+
+// MetaDataDir 元数据存储目录：$HOME/.asmroner-data
+// 极端环境下无法获取主目录时兜底为当前目录下的 .asmroner-data
+func MetaDataDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return MetaDataDirName
+	}
+	return filepath.Join(home, MetaDataDirName)
+}
 
 // ConfigFileName 配置文件名
 const ConfigFileName = "config.toml"
