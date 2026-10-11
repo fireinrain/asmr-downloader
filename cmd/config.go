@@ -44,7 +44,7 @@ config 命令用于初始化或重置本程序的配置文件，并以“交互�
   - IDM 安装路径（可选，用于自动生成下载脚本）
 
 配置文件路径：
-  ~/.asmroner/config.toml
+  $HOME/.asmroner-data/config.toml
 
 适用场景：
   - 首次安装本程序时初始化配置
@@ -58,11 +58,11 @@ config 命令用于初始化或重置本程序的配置文件，并以“交互�
 `,
 
 	Run: func(cmd *cobra.Command, args []string) {
-		configFile := filepath.Join(consts.MetaDataDir, consts.ConfigFileName)
+		configFile := filepath.Join(consts.MetaDataDir(), consts.ConfigFileName)
 		reader := bufio.NewReader(os.Stdin)
 
 		// 创建目录
-		if err := os.MkdirAll(consts.MetaDataDir, 0755); err != nil {
+		if err := os.MkdirAll(consts.MetaDataDir(), 0755); err != nil {
 			log.Fatalf("❌ 无法创建配置目录: %v", err)
 		}
 
@@ -206,7 +206,7 @@ func promptFloat(reader *bufio.Reader, text string, def float64) float64 {
 func writeConfig(configFile string) {
 	viper.SetConfigName("config")
 	viper.SetConfigType("toml")
-	viper.AddConfigPath(consts.MetaDataDir)
+	viper.AddConfigPath(consts.MetaDataDir())
 
 	// SafeWriteConfig 不存在才写
 	if err := viper.SafeWriteConfig(); err != nil {

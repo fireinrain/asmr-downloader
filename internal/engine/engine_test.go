@@ -346,6 +346,95 @@ func names(urls [][]string) []string {
 	}
 	return out
 }
+// TestRemoteFileSize 验证从下载条目解析远端文件大小
+func TestRemoteFileSize(t *testing.T) {
+	cases := []struct {
+		name  string
+		entry []string
+		want  int64
+	}{
+		{"正常大小", []string{"u", "d", "f", "34577991"}, 34577991},
+		{"缺少大小字段（旧格式）", []string{"u", "d", "f"}, -1},
+		{"空字符串", []string{"u", "d", "f", ""}, -1},
+		{"非法数字", []string{"u", "d", "f", "abc"}, -1},
+		{"零与负数视为未知", []string{"u", "d", "f", "0"}, -1},
+	}
+	for _, c := range cases {
+		if got := remoteFileSize(c.entry); got != c.want {
+			t.Errorf("%s: remoteFileSize = %d, want %d", c.name, got, c.want)
+		}
+	}
+}
+
+// TestIsFileComplete 验证"本地大小 == 远端大小"的完整性判断及未知大小的退化行为
+func TestIsFileComplete(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "01.mp3")
+
+	// 文件不存在 → 不完整
+	if isFileComplete(path, []string{"u", dir, "01.mp3", "100"}) {
+		t.Fatal("missing file should not be complete")
+	}
+	// 写入部分内容（小于远端） → 不完整
+	if err := os.WriteFile(path, make([]byte, 50), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if isFileComplete(path, []string{"u", dir, "01.mp3", "100"}) {
+		t.Fatal("partial file should not be complete")
+	}
+	// 大小与远端一致 → 完整
+	if err := os.WriteFile(path, make([]byte, 100), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if !isFileComplete(path, []string{"u", dir, "01.mp3", "100"}) {
+		t.Fatal("same-size file should be complete")
+	}
+	// 本地大于远端（异常残留） → 不完整，需重下
+	if isFileComplete(path, []string{"u", dir, "01.mp3", "50"}) {
+		t.Fatal("oversize file should not be complete")
+	}
+	// 远端大小未知 → 退化为旧逻辑（存在且非空即完整）
+	if !isFileComplete(path, []string{"u", dir, "01.mp3", ""}) {
+		t.Fatal("non-empty file should be complete when remote size unknown")
+	}
+	// 空文件且大小未知 → 不完整
+	empty := filepath.Join(dir, "empty.mp3")
+	if err := os.WriteFile(empty, nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if isFileComplete(empty, []string{"u", dir, "empty.mp3", ""}) {
+		t.Fatal("empty file should not be complete when remote size unknown")
+	}
+}
+
+// TestIsResumable 验证"本地比远端小"的可续传判断
+func TestIsResumable(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "02.wav")
+
+	// 不存在 → 不可续传（正常全新下载）
+	if isResumable(path, []string{"u", dir, "02.wav", "100"}) {
+		t.Fatal("missing file should not be resumable")
+	}
+	// 本地 50 < 远端 100 → 可续传
+	if err := os.WriteFile(path, make([]byte, 50), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if !isResumable(path, []string{"u", dir, "02.wav", "100"}) {
+		t.Fatal("partial file should be resumable")
+	}
+	// 本地 == 远端 → 完整，无需续传
+	if err := os.WriteFile(path, make([]byte, 100), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if isResumable(path, []string{"u", dir, "02.wav", "100"}) {
+		t.Fatal("complete file should not be resumable")
+	}
+	// 远端大小未知 → 不续传（走覆盖重下）
+	if isResumable(path, []string{"u", dir, "02.wav", ""}) {
+		t.Fatal("unknown remote size should not be resumable")
+	}
+}
 
 func TestEngineManager_AuthLogin(t *testing.T) {
 	// Use a relative path from the project root

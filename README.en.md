@@ -156,7 +156,7 @@ Full asmr.one search syntax: `keyword,exclusion@filters?pagination`
 <details>
 <summary><b>⚙️ Config File Reference</b></summary>
 
-Config file path: `.asmroner-data/config.toml` (TOML format)
+Config file path: `$HOME/.asmroner-data/config.toml` (TOML format, located at `C:\Users\<username>\.asmroner-data\config.toml` on Windows)
 
 ```toml
 [user]

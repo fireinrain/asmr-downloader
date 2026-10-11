@@ -13,7 +13,7 @@ import (
 var Database *gorm.DB
 
 func InitDB() (*gorm.DB, error) {
-	dbPath := filepath.Join(consts.MetaDataDir, consts.DbName)
+	dbPath := filepath.Join(consts.MetaDataDir(), consts.DbName)
 	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
