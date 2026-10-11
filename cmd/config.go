@@ -138,7 +138,7 @@ func InitConfig(reader *bufio.Reader, configFile string) {
 	viper.Set("user.account", account)
 	viper.Set("user.password", password)
 
-	viper.Set("downloader.site_url", apiURL)
+	viper.Set("downloader.api_url", apiURL)
 	viper.Set("downloader.proxy_url", proxyURL)
 	viper.Set("downloader.max_workers", maxWorkers)
 	viper.Set("downloader.max_retries", maxRetries)
