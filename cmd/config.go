@@ -44,7 +44,7 @@ config 命令用于初始化或重置本程序的配置文件，并以“交互�
   - IDM 安装路径（可选，用于自动生成下载脚本）
 
 配置文件路径：
-  $HOME/.asmroner-data/config.toml
+  默认使用 $HOME/.asmroner-data/config.toml；仅当该文件不存在时，才使用当前目录下的 .asmroner-data/config.toml。
 
 适用场景：
   - 首次安装本程序时初始化配置

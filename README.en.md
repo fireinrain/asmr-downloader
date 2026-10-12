@@ -234,7 +234,7 @@ Constraints beyond the grammar: at least one part must be non-empty (`?params` a
 <details>
 <summary><b>⚙️ Config File Reference</b></summary>
 
-Config file path: `$HOME/.asmroner-data/config.toml` (TOML format, located at `C:\Users\<username>\.asmroner-data\config.toml` on Windows)
+The default config path is `$HOME/.asmroner-data/config.toml` (TOML format, located at `C:\Users\<username>\.asmroner-data\config.toml` on Windows). For portable installs, the program uses `.asmroner-data/config.toml` in the current directory only when no config exists under `$HOME`.
 
 ```toml
 [user]
