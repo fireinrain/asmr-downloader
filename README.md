@@ -236,7 +236,7 @@ param        = key , "=" , value ;
 <details>
 <summary><b>⚙️ 配置文件说明</b></summary>
 
-配置文件路径：`$HOME/.asmroner-data/config.toml`（TOML 格式，Windows 下位于 `C:\Users\<用户名>\.asmroner-data\config.toml`）
+配置文件路径默认是 `$HOME/.asmroner-data/config.toml`（TOML 格式，Windows 下位于 `C:\Users\<用户名>\.asmroner-data\config.toml`）。为便于携带程序运行，仅当 HOME 下没有配置文件时，程序才会使用当前目录的 `.asmroner-data/config.toml`。
 
 ```toml
 [user]

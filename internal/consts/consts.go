@@ -6,17 +6,27 @@ import (
 	"regexp"
 )
 
-// MetaDataDirName 元数据存储目录名（位于用户主目录 $HOME 下）
+// MetaDataDirName 元数据存储目录名。
 const MetaDataDirName = ".asmroner-data"
 
-// MetaDataDir 元数据存储目录：$HOME/.asmroner-data
-// 极端环境下无法获取主目录时兜底为当前目录下的 .asmroner-data
+// MetaDataDir 返回元数据存储目录。
+// 用户主目录优先；主目录没有配置文件时，兼容当前目录下已有的便携式配置。
 func MetaDataDir() string {
 	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return MetaDataDirName
+	if err == nil && home != "" {
+		homeDir := filepath.Join(home, MetaDataDirName)
+		if _, err := os.Stat(filepath.Join(homeDir, ConfigFileName)); err == nil {
+			return homeDir
+		}
+
+		localDir := filepath.Join(".", MetaDataDirName)
+		if _, err := os.Stat(filepath.Join(localDir, ConfigFileName)); err == nil {
+			return localDir
+		}
+		return homeDir
 	}
-	return filepath.Join(home, MetaDataDirName)
+
+	return filepath.Join(".", MetaDataDirName)
 }
 
 // ConfigFileName 配置文件名

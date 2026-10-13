@@ -61,7 +61,7 @@ asmroner 是一个基于Go的多功能命令行工，提供以下功能：
 
 注意事项：
   - 除 config/help 命令外，所有命令执行前必须确保配置文件已初始化
-  - 配置文件默认位置：$HOME/.asmroner-data/config.toml
+	- 配置目录优先使用 $HOME/.asmroner-data；仅当 HOME 下没有配置时才使用当前目录
   - 目录不存在时，程序会自动创建
 `,
 	Run: func(cmd *cobra.Command, args []string) {
