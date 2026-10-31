@@ -7,15 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math/rand"
-	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 // FastFetchResult holds the URL and response time for fastest-site detection.
@@ -60,25 +57,6 @@ func FileSize2Byte(fileSizeStr string) (int64, error) {
 
 func RandomUserAgent(useragents []string) string {
 	return useragents[rand.Intn(len(useragents))]
-}
-
-// FastFetch fetches a URL and sends it to the channel on success.
-// The first URL to arrive in the channel is the fastest.
-func FastFetch(url string, wg *sync.WaitGroup, ch chan<- string) {
-	defer wg.Done()
-
-	resp, err := http.Get(url)
-	if err != nil {
-		return
-	}
-	defer resp.Body.Close()
-
-	_, err = io.ReadAll(resp.Body)
-	if err != nil {
-		return
-	}
-
-	ch <- url
 }
 
 // IsValidDlsiteID 校验Dlsite ID是否合法

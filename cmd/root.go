@@ -59,6 +59,9 @@ asmroner 是一个基于Go的多功能命令行工，提供以下功能：
   asmroner sync export -s failed -f failed.csv
       导出失败文件列表到 CSV
 
+  asmroner ping
+      对各镜像 API 地址测速，找出响应最快的
+
 注意事项：
   - 除 config/help 命令外，所有命令执行前必须确保配置文件已初始化
 	- 配置目录优先使用 $HOME/.asmroner-data；仅当 HOME 下没有配置时才使用当前目录
