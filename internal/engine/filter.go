@@ -29,6 +29,21 @@ func isAudioExt(lf string) bool {
 	return false
 }
 
+// trackAudioExts 统计音轨数时认可的纯音频后缀（排除字幕、图片、文本等附属文件）
+var trackAudioExts = []string{
+	".mp3", ".wav", ".flac", ".m4a", ".ogg", ".wma", ".aac", ".opus",
+}
+
+// isAudioFileExt 文件名（已小写）是否为纯音频文件（区别于 isAudioExt，不含 .mp3.vtt 等嵌套字幕）
+func isAudioFileExt(lf string) bool {
+	for _, ext := range trackAudioExts {
+		if strings.HasSuffix(lf, ext) {
+			return true
+		}
+	}
+	return false
+}
+
 // hitAudioFormat 文件名（已小写）是否命中指定音频格式的任一后缀
 func hitAudioFormat(lf string, format string) bool {
 	exts, ok := audioExtMap[format]

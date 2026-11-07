@@ -247,7 +247,7 @@ func (m *EngineManager) DownloadOne(ctx context.Context, id string, storeBaseDir
 		task.Error("获取音轨列表失败: %s", logger.SummarizeError(err))
 		return err
 	}
-	task.Info("音轨数: %d", len(tracks))
+	task.Info("音轨数: %d", countTrackFiles(tracks))
 
 	// 新建下载目录名
 	folderName := utils.BuildFolderName(
@@ -491,6 +491,21 @@ func (m *EngineManager) filterExcludeExt(urls [][]string) [][]string {
 		}
 	}
 	return kept
+}
+
+// countTrackFiles 递归统计音轨树中的音频文件数
+// tracks 接口返回的是嵌套树结构，根层 len(tracks) 只是顶层条目数，不能代表实际文件数；
+// 仅统计纯音频文件，图片/字幕/文本等附属文件不计入
+func countTrackFiles(tracks []model.Track) int {
+	count := 0
+	for _, t := range tracks {
+		if t.Type == "folder" {
+			count += countTrackFiles(t.Children)
+		} else if isAudioFileExt(strings.ToLower(t.Title)) {
+			count++
+		}
+	}
+	return count
 }
 
 func (m *EngineManager) ensureDirExists(tracks []model.Track, storeBaseDir string) ([][]string, error) {
